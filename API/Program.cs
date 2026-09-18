@@ -84,7 +84,9 @@ builder.Services.AddScoped<ISmartLockerDbContext>(sp =>
 
 // === JWT Authentication (từ module Auth của Quân) ===
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"] ?? "SmartLocker.Super.Secret.Key.2025.MinLength32Chars";
+var secretKey = string.IsNullOrWhiteSpace(jwtSettings["SecretKey"])
+    ? "SmartLocker.Super.Secret.Key.2025.MinLength32Chars"
+    : jwtSettings["SecretKey"]!;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
