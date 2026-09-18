@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Domain.Entities;
+using Domain.Enums;
 
 namespace Infrastructure.Persistence;
 
@@ -28,11 +29,22 @@ public class SmartLockerDbContext : DbContext
             entity.Property(u => u.Email).IsRequired().HasMaxLength(255);
             entity.Property(u => u.Phone).IsRequired().HasMaxLength(20);
             entity.Property(u => u.PasswordHash).IsRequired().HasMaxLength(255);
-            entity.Property(u => u.Role).IsRequired().HasMaxLength(20).HasDefaultValue("TRAVELER");
-            entity.Property(u => u.Status).IsRequired().HasMaxLength(30).HasDefaultValue("PENDING_VERIFICATION");
+
+            entity.Property(u => u.Role)
+                .IsRequired()
+                .HasMaxLength(20)
+                .HasConversion(v => v.ToString(), v => Enum.Parse<UserRole>(v))
+                .HasDefaultValue(UserRole.TRAVELER);
+
+            entity.Property(u => u.Status)
+                .IsRequired()
+                .HasMaxLength(30)
+                .HasConversion(v => v.ToString(), v => Enum.Parse<UserStatus>(v))
+                .HasDefaultValue(UserStatus.PENDING_VERIFICATION);
+
             entity.Property(u => u.OverdueDebt).HasColumnType("decimal(12,2)").HasDefaultValue(0m);
-            entity.Property(u => u.GoogleId).HasMaxLength(100);
-            entity.Property(u => u.AvatarUrl).HasMaxLength(500);
+            entity.Property(u => u.GoogleId).HasMaxLength(128);
+            entity.Property(u => u.AvatarUrl).HasMaxLength(512);
             entity.Property(u => u.CreatedAt).HasDefaultValueSql("getutcdate()");
             entity.Property(u => u.UpdatedAt).HasDefaultValueSql("getutcdate()");
 
@@ -43,10 +55,10 @@ public class SmartLockerDbContext : DbContext
         });
 
 
-        // === Ánh xạ bảng OtpCodes (theo schema do_an.sql) ===
+        // === Ánh xạ bảng OtpCodes (theo schema slms_schema.sql) ===
         modelBuilder.Entity<OtpCode>(entity =>
         {
-            entity.ToTable("OtpCodes", t => t.HasTrigger("trg_OtpCodes"));
+            entity.ToTable("OtpCodes");
             entity.HasKey(o => o.Id);
             entity.Property(o => o.Id).HasDefaultValueSql("newsequentialid()");
 
