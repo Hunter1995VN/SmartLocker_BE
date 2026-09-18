@@ -34,6 +34,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasPrecision(12, 2)
             .HasDefaultValue(0);
 
+        // Từ module Auth (Quân): Google OAuth
+        builder.Property(x => x.GoogleId).HasMaxLength(128);
+        builder.Property(x => x.AvatarUrl).HasMaxLength(512);
+
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
     }

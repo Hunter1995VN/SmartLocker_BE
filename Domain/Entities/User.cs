@@ -12,6 +12,9 @@ public class User
     public UserRole Role { get; set; } = UserRole.TRAVELER;
     public UserStatus Status { get; set; } = UserStatus.PENDING_VERIFICATION;
     public decimal OverdueDebt { get; set; }
+    // Thêm từ module Auth (Quân): Google OAuth và Avatar
+    public string? GoogleId { get; set; }
+    public string? AvatarUrl { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }

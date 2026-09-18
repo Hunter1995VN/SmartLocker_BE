@@ -5,6 +5,12 @@
 
 # dotenv files
 .env
+appsettings.Development.json
+appsettings.Production.json
+*.env.*.local
+*.env.local
+*.env.production
+*.env.development
 
 # User-specific files
 *.rsuser
