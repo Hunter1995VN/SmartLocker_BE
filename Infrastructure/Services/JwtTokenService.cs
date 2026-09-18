@@ -4,9 +4,9 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using SmartLocker.Domain.Interfaces;
+using Domain.Interfaces;
 
-namespace SmartLocker.Infrastructure.Services;
+namespace Infrastructure.Services;
 
 /// <summary>
 /// Cấu hình JWT - load từ appsettings.json: JwtSettings.{SecretKey, Issuer, Audience, AccessTokenMinutes}.

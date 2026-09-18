@@ -4,9 +4,9 @@ using MailKit.Net.Smtp;
 using MimeKit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SmartLocker.Domain.Interfaces;
+using Domain.Interfaces;
 
-namespace SmartLocker.Infrastructure.Services;
+namespace Infrastructure.Services;
 
 /// <summary>
 /// Cấu hình SMTP & Email để gửi OTP qua Gmail.

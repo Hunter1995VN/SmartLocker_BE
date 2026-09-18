@@ -1,54 +1,88 @@
 using System.Text;
+using API.Middleware;
+using Application.Interfaces;
+using Infrastructure.Data;
+using Infrastructure.Services;
+using Infrastructure.BackgroundJobs;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using SmartLocker.Application.Services;
-using SmartLocker.Infrastructure.Persistence;
-using SmartLocker.Infrastructure.Services;
-using SmartInfrastructure;
+using System.Text.Json.Serialization;
+
+// =======================
+// Quân cần thêm khi DI của module Auth đã ready:
+// using SmartInfrastructure; // DependencyInjection.cs của Quân
+// using SmartLocker.Application.Services;
+// =======================
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ===================================================================================
-// 1. ĐĂNG KÝ SERVICES
-// ===================================================================================
-//
-// ⚠️ BẢO MẬT: Các giá trị nhạy cảm (DB password, JWT Secret, SMTP password, Google ClientId)
-//    nên được cấu hình qua Environment Variables hoặc User Secrets, KHÔNG commit lên Git.
-//    Xem file appsettings.Example.json để biết danh sách các biến cần thiết.
-//
-//    Cách set biến môi trường trên Windows (PowerShell):
-//    $env:ConnectionStrings__Default="Server=...;Password=...;"
-//    $env:JwtSettings__SecretKey="your-secret-key"
-//    $env:SmtpSettings__Password="your-app-password"
-//    $env:GoogleAuth__ClientId="your-client-id.apps.googleusercontent.com"
+// === Controllers + JSON enum serialization ===
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    });
 
-builder.Services.AddControllers();
-
-// Connection String từ appsettings.json
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Server=localhost;Database=db65218;Trusted_Connection=True;TrustServerCertificate=True;";
-
-// Đăng ký Application + Infrastructure services (sẽ tự inject DbContext, JWT, Email, OTP, Repos)
-builder.Services.AddInfrastructure(builder.Configuration);
-
-// Đăng ký AuthService cho Controller
-builder.Services.AddScoped<AuthService>();
-
-// CORS - cho phép Frontend React (port 5173/5174/5175) gọi API
+// === CORS (cho phép Frontend React + AllowCredentials cho Google OAuth) ===
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.SetIsOriginAllowed(_ => true)  // Cho phép tất cả origin (chỉ dùng cho dev)
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
     });
 });
 
-// JWT Authentication Middleware
+// === Swagger với Bearer Token support ===
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "SmartLocker API",
+        Version = "v1",
+        Description = "SmartLocker Management System - .NET 8 Clean Architecture"
+    });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Nhập JWT token: Bearer {token}"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// === Database (Nhiệm's SmartLockerDbContext cho EF Core + Booking) ===
+builder.Services.AddDbContext<SmartLockerDbContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure(3)
+    ));
+builder.Services.AddScoped<ISmartLockerDbContext>(sp =>
+    sp.GetRequiredService<SmartLockerDbContext>());
+
+// === Auth module của Quân — uncomment khi Quân merge xong ===
+// builder.Services.AddInfrastructure(builder.Configuration);
+// builder.Services.AddScoped<AuthService>();
+
+// === JWT Authentication (từ module Auth của Quân) ===
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? "SmartLocker.Super.Secret.Key.2025.MinLength32Chars";
 
@@ -70,99 +104,46 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// Swagger UI - có sẵn Bearer Token Authorization
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "SmartLocker Auth API",
-        Version = "v1",
-        Description = "API xác thực người dùng SmartLocker - .NET 8 Clean Architecture"
-    });
+// === Nhiệm's Services (Booking/Payment) ===
+builder.Services.AddScoped<IPricingService, PricingService>();
+builder.Services.AddScoped<IPaymentGatewayService, PayOSService>();
+builder.Services.AddScoped<IBookingService, BookingService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
 
-    // Thêm nhập Bearer Token
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Nhập JWT token của bạn vào đây"
-    });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
+// === Background Jobs (Nhiệm) ===
+builder.Services.AddHostedService<BookingExpirationJob>();
+builder.Services.AddHostedService<NoShowJob>();
+builder.Services.AddHostedService<OverdueCheckJob>();
 
-// ===================================================================================
-// 2. BUILD APP
-// ===================================================================================
+// ============================================================
 var app = builder.Build();
 
-// Tự động chạy migrations / tạo schema khi dev (sẽ tạo bảng nếu chưa có)
-if (app.Environment.IsDevelopment())
+// === Middleware Pipeline ===
+
+// Global exception handler (Nhiệm)
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// Swagger (luôn bật để dễ demo đồ án)
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "SmartLocker Auth v1");
-        c.RoutePrefix = "swagger";
-    });
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SmartLocker API v1");
+    c.RoutePrefix = "swagger";
+});
 
-    // Tạo database nếu chưa tồn tại (chỉ dành cho dev/demo)
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<SmartLockerDbContext>();
-    try
-    {
-        dbContext.Database.EnsureCreated();
-        Console.WriteLine("✅ Database đã sẵn sàng");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"⚠️ Lỗi kết nối DB: {ex.Message}");
-        Console.WriteLine("ℹ️ Chạy file do_an.sql trên SQL Server trước khi khởi động.");
-    }
-}
-
-// ===================================================================================
-// 3. MIDDLEWARE PIPELINE
-// ===================================================================================
-
-app.UseCors("AllowFrontend");
-
-// Fix Cross-Origin-Opener-Policy để Google OAuth popup hoạt động
+// Fix Cross-Origin-Opener-Policy để Google OAuth popup hoạt động (Quân)
 app.Use(async (context, next) =>
 {
     context.Response.Headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups";
     await next();
 });
 
-app.UseAuthentication();   // Xác thực JWT
-app.UseAuthorization();    // Phân quyền
-
+app.UseCors("AllowFrontend");
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
-// Không redirect HTTPS trong dev (để tránh lỗi certificate)
-// app.UseHttpsRedirection();
-
-// Endpoint health check đơn giản
-app.MapGet("/", () => Results.Ok(new
-{
-    app = "SmartLocker Auth API",
-    version = "1.0.0",
-    status = "running",
-    swagger = "/swagger"
-}));
-
+// Health check endpoint
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 app.Run();

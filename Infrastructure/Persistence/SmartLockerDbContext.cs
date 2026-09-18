@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using SmartLocker.Domain.Entities;
+using Domain.Entities;
 
-namespace SmartLocker.Infrastructure.Persistence;
+namespace Infrastructure.Persistence;
 
 /// <summary>
 /// DbContext chính của SmartLocker - ánh xạ với database db65218 trên SQL Server.

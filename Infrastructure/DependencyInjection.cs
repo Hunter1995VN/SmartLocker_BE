@@ -1,10 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SmartLocker.Domain.Interfaces;
-using SmartLocker.Infrastructure.Persistence;
-using SmartLocker.Infrastructure.Persistence.Repositories;
-using SmartLocker.Infrastructure.Services;
+using Domain.Interfaces;
+using Infrastructure.Persistence;
+using Infrastructure.Persistence.Repositories;
+using Infrastructure.Services;
 
 namespace SmartInfrastructure;
 

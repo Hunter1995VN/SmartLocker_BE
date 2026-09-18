@@ -1,11 +1,12 @@
+using Domain.Enums;
 using System.Security.Cryptography;
 using System.Text;
-using SmartLocker.Application.DTOs;
-using SmartLocker.Application.DTOs.Auth;
-using SmartLocker.Domain.Entities;
-using SmartLocker.Domain.Interfaces;
+using Application.DTOs;
+using Application.DTOs.Auth;
+using Domain.Entities;
+using Domain.Interfaces;
 
-namespace SmartLocker.Application.Services;
+namespace Application.Services;
 
 /// <summary>
 /// Orchestrator xử lý tất cả flow xác thực: Đăng ký, OTP, Đăng nhập, Quên mật khẩu.
@@ -83,8 +84,8 @@ public class AuthService
             Email = req.Email.ToLowerInvariant().Trim(),
             Phone = req.Phone.Trim(),
             PasswordHash = passwordHash,
-            Role = "TRAVELER",
-            Status = "PENDING_VERIFICATION",
+            Role = UserRole.TRAVELER,
+            Status = UserStatus.PENDING_VERIFICATION,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -154,9 +155,9 @@ public class AuthService
                 return Result<AuthResponse>.Failure("USER_NOT_FOUND", "Không tìm thấy tài khoản");
 
             // 6. Kích hoạt user nếu đang Pending
-            if (user.Status == "PENDING_VERIFICATION")
+            if (user.Status == UserStatus.PENDING_VERIFICATION)
             {
-                user.Status = "ACTIVE";
+                user.Status = UserStatus.ACTIVE;
                 _users.Update(user);
             }
 
@@ -164,7 +165,7 @@ public class AuthService
             await _users.SaveChangesAsync(ct);
 
             // 8. Cấp JWT
-            var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role);
+            var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
 
             return Result<AuthResponse>.Success(new AuthResponse
             {
@@ -172,7 +173,7 @@ public class AuthService
                 FullName = user.FullName,
                 Email = user.Email,
                 Phone = user.Phone,
-                Role = user.Role,
+                Role = user.Role.ToString(),
                 AccessToken = token,
                 RefreshToken = _jwt.GenerateRefreshToken(),
                 AccessTokenExpiresAt = expiresAt
@@ -204,16 +205,16 @@ public class AuthService
         if (user == null || !_hasher.Verify(req.Password, user.PasswordHash))
             return Result<AuthResponse>.Failure("INVALID_CREDENTIALS", "Email hoặc mật khẩu không chính xác");
 
-        if (user.Status == "PENDING_VERIFICATION")
+        if (user.Status == UserStatus.PENDING_VERIFICATION)
             return Result<AuthResponse>.Failure("ACCOUNT_NOT_VERIFIED", "Tài khoản chưa được xác thực. Vui lòng kiểm tra email.");
 
-        if (user.Status == "SUSPENDED")
+        if (user.Status == UserStatus.SUSPENDED)
             return Result<AuthResponse>.Failure("ACCOUNT_LOCKED", "Tài khoản đang bị tạm khóa. Liên hệ hỗ trợ.");
 
-        if (user.Status == "DELETED")
+        if (user.Status == UserStatus.DELETED)
             return Result<AuthResponse>.Failure("ACCOUNT_DISABLED", "Tài khoản đã bị vô hiệu hóa");
 
-        var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role);
+        var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
 
         return Result<AuthResponse>.Success(new AuthResponse
         {
@@ -221,7 +222,7 @@ public class AuthService
             FullName = user.FullName,
             Email = user.Email,
             Phone = user.Phone,
-            Role = user.Role,
+            Role = user.Role.ToString(),
             AccessToken = token,
             RefreshToken = _jwt.GenerateRefreshToken(),
             AccessTokenExpiresAt = expiresAt
@@ -300,7 +301,7 @@ public class AuthService
 
         // Cập nhật mật khẩu mới
         user.PasswordHash = _hasher.Hash(req.NewPassword);
-        user.Status = "ACTIVE"; // đảm bảo active
+        user.Status = UserStatus.ACTIVE; // đảm bảo active
         _users.Update(user);
 
         otp.UsedAt = DateTime.UtcNow;
@@ -309,14 +310,14 @@ public class AuthService
         await _users.SaveChangesAsync(ct);
         await _otps.SaveChangesAsync(ct);
 
-        var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role);
+        var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
         return Result<AuthResponse>.Success(new AuthResponse
         {
             UserId = user.Id,
             FullName = user.FullName,
             Email = user.Email,
             Phone = user.Phone,
-            Role = user.Role,
+            Role = user.Role.ToString(),
             AccessToken = token,
             RefreshToken = _jwt.GenerateRefreshToken(),
             AccessTokenExpiresAt = expiresAt
@@ -435,8 +436,8 @@ public class AuthService
                     PasswordHash = "",
                     GoogleId = googleId,
                     AvatarUrl = payload.Picture,
-                    Role = "TRAVELER",
-                    Status = "ACTIVE",
+                    Role = UserRole.TRAVELER,
+                    Status = UserStatus.ACTIVE,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -455,20 +456,20 @@ public class AuthService
                 }
 
                 // Nếu tài khoản bị khóa
-                if (user.Status == "SUSPENDED" || user.Status == "DELETED")
+                if (user.Status == UserStatus.SUSPENDED || user.Status == UserStatus.DELETED)
                     return Result<AuthResponse>.Failure("ACCOUNT_LOCKED", "Tài khoản đang bị tạm khóa. Liên hệ hỗ trợ.");
 
                 // Kích hoạt nếu đang pending
-                if (user.Status == "PENDING_VERIFICATION")
+                if (user.Status == UserStatus.PENDING_VERIFICATION)
                 {
-                    user.Status = "ACTIVE";
+                    user.Status = UserStatus.ACTIVE;
                     _users.Update(user);
                     await _users.SaveChangesAsync(ct);
                 }
             }
 
             // 4. Cấp JWT
-            var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role);
+            var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
 
             return Result<AuthResponse>.Success(new AuthResponse
             {
@@ -476,7 +477,7 @@ public class AuthService
                 FullName = user.FullName,
                 Email = user.Email,
                 Phone = user.Phone,
-                Role = user.Role,
+                Role = user.Role.ToString(),
                 AccessToken = token,
                 RefreshToken = _jwt.GenerateRefreshToken(),
                 AccessTokenExpiresAt = expiresAt
