@@ -15,10 +15,13 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
-        // 1. Kết nối SQL Server — đọc connection string "Default" từ appsettings.json
+        // 1. Kết nối SQL Server — hỗ trợ cả DefaultConnection (Nhiệm) và Default (Quân)
+        var connStr = config.GetConnectionString("DefaultConnection") 
+            ?? config.GetConnectionString("Default")
+            ?? "Server=localhost;Database=db65218;Trusted_Connection=True;TrustServerCertificate=True;";
+
         services.AddDbContext<SmartLockerDbContext>(opts =>
-            opts.UseSqlServer(config.GetConnectionString("Default")
-                ?? "Server=localhost;Database=db65218;Trusted_Connection=True;TrustServerCertificate=True;"));
+            opts.UseSqlServer(connStr));
 
         // 2. Bind options
         services.Configure<SmtpSettings>(config.GetSection("SmtpSettings"));
