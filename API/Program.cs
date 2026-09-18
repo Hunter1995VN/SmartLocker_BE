@@ -10,11 +10,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text.Json.Serialization;
 
-// =======================
-// Quân cần thêm khi DI của module Auth đã ready:
-// using SmartInfrastructure; // DependencyInjection.cs của Quân
-// using SmartLocker.Application.Services;
-// =======================
+using SmartInfrastructure;
+using Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,18 +66,21 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// === Database (Nhiệm's SmartLockerDbContext cho EF Core + Booking) ===
+// === Database (hỗ trợ cả DefaultConnection và Default) ===
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration.GetConnectionString("Default");
+
 builder.Services.AddDbContext<SmartLockerDbContext>(options =>
     options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
+        connectionString,
         sqlOptions => sqlOptions.EnableRetryOnFailure(3)
     ));
 builder.Services.AddScoped<ISmartLockerDbContext>(sp =>
     sp.GetRequiredService<SmartLockerDbContext>());
 
-// === Auth module của Quân — uncomment khi Quân merge xong ===
-// builder.Services.AddInfrastructure(builder.Configuration);
-// builder.Services.AddScoped<AuthService>();
+// === Auth module của Quân (JWT, OTP, Google OAuth, Repositories) ===
+builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<AuthService>();
 
 // === JWT Authentication (từ module Auth của Quân) ===
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
