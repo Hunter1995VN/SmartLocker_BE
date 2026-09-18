@@ -2,10 +2,13 @@ namespace API.Controllers;
 
 using Application.DTOs.Booking;
 using Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;
@@ -15,13 +18,17 @@ public class BookingsController : ControllerBase
         _bookingService = bookingService;
     }
 
-    // Temporary: Get userId from header until JWT Auth is implemented
+    /// <summary>
+    /// Lấy UserId từ JWT claim "sub" hoặc "uid"
+    /// </summary>
     private Guid GetUserId()
     {
-        var userIdHeader = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (Guid.TryParse(userIdHeader, out var userId))
-            return userId;
-        return Guid.Empty; // Will be replaced with JWT claim
+        // Quân's JwtTokenService đặt userId vào claim "sub" và "uid"
+        var uid = User.FindFirstValue("uid")
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        return Guid.TryParse(uid, out var userId) ? userId : Guid.Empty;
     }
 
     /// <summary>
@@ -32,7 +39,7 @@ public class BookingsController : ControllerBase
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return Unauthorized(new { message = "Vui l\u00f2ng cung c\u1ea5p X-User-Id header" });
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.CreateBookingAsync(userId, request);
         if (!result.Success)
@@ -42,14 +49,14 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T05: Xem chi ti\u1ebft booking
+    /// UC-T05: Xem chi tiết booking
     /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetBooking(Guid id)
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return Unauthorized(new { message = "Vui l\u00f2ng cung c\u1ea5p X-User-Id header" });
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.GetBookingByIdAsync(userId, id);
         if (!result.Success)
@@ -59,7 +66,7 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T06: Danh s\u00e1ch booking c\u1ee7a user
+    /// UC-T06: Danh sách booking của user (My Bookings)
     /// </summary>
     [HttpGet("my")]
     public async Task<IActionResult> GetMyBookings(
@@ -69,21 +76,21 @@ public class BookingsController : ControllerBase
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return Unauthorized(new { message = "Vui l\u00f2ng cung c\u1ea5p X-User-Id header" });
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.GetUserBookingsAsync(userId, status, page, pageSize);
         return Ok(result);
     }
 
     /// <summary>
-    /// UC-T07: Gia h\u1ea1n booking
+    /// UC-T07: Gia hạn booking
     /// </summary>
     [HttpPost("{id:guid}/extend")]
     public async Task<IActionResult> ExtendBooking(Guid id, [FromBody] ExtendBookingRequest request)
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return Unauthorized(new { message = "Vui l\u00f2ng cung c\u1ea5p X-User-Id header" });
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.ExtendBookingAsync(userId, id, request);
         if (!result.Success)
@@ -93,14 +100,14 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T08: H\u1ee7y booking
+    /// UC-T08: Hủy booking
     /// </summary>
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> CancelBooking(Guid id, [FromBody] CancelBookingRequest request)
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return Unauthorized(new { message = "Vui l\u00f2ng cung c\u1ea5p X-User-Id header" });
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.CancelBookingAsync(userId, id, request);
         if (!result.Success)
@@ -110,14 +117,14 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T09: Thanh to\u00e1n ph\u1ee5 ph\u00ed qu\u00e1 h\u1ea1n
+    /// UC-T09: Thanh toán phụ phí quá hạn
     /// </summary>
     [HttpPost("{id:guid}/pay-overdue")]
     public async Task<IActionResult> PayOverdueFee(Guid id)
     {
         var userId = GetUserId();
         if (userId == Guid.Empty)
-            return Unauthorized(new { message = "Vui l\u00f2ng cung c\u1ea5p X-User-Id header" });
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.PayOverdueFeeAsync(userId, id);
         if (!result.Success)
