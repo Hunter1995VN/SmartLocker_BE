@@ -96,6 +96,20 @@ public class PayOSService : IPaymentGatewayService
         }
     }
 
+    public async Task<string?> GetPaymentStatusAsync(long orderCode)
+    {
+        try
+        {
+            var info = await _client.PaymentRequests.GetAsync(orderCode);
+            return info == null ? null : info.Status.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check status from PayOS for OrderCode={OrderCode}", orderCode);
+            return null;
+        }
+    }
+
     public async Task<bool> CancelPaymentLinkAsync(long orderCode, string? reason = null)
     {
         try
