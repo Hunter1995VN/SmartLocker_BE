@@ -20,6 +20,12 @@ public interface IPaymentGatewayService
     Task<object?> GetPaymentLinkInfoAsync(long orderCode);
 
     /// <summary>
+    /// Lấy trạng thái thanh toán từ PayOS ("PAID", "PENDING", "CANCELLED", etc.).
+    /// Dùng cho Background Service đối soát tránh sót đơn khi webhook bị lỗi.
+    /// </summary>
+    Task<string?> GetPaymentStatusAsync(long orderCode);
+
+    /// <summary>
     /// Hủy payment link.
     /// </summary>
     Task<bool> CancelPaymentLinkAsync(long orderCode, string? reason = null);
