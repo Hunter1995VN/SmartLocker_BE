@@ -9,7 +9,7 @@ public class PricingPolicyConfiguration : IEntityTypeConfiguration<PricingPolicy
 {
     public void Configure(EntityTypeBuilder<PricingPolicy> builder)
     {
-        builder.ToTable("PricingPolicies");
+        builder.ToTable("PricingPolicies", tb => tb.UseSqlOutputClause(false));
 
         builder.HasKey(x => x.Id);
 

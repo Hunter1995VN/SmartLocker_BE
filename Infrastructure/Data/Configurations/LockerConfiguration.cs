@@ -9,7 +9,7 @@ public class LockerConfiguration : IEntityTypeConfiguration<Locker>
 {
     public void Configure(EntityTypeBuilder<Locker> builder)
     {
-        builder.ToTable("Lockers");
+        builder.ToTable("Lockers", tb => tb.UseSqlOutputClause(false));
 
         builder.HasKey(x => x.Id);
 
