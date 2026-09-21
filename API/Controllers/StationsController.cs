@@ -31,21 +31,46 @@ public class StationsController : ControllerBase
             query = query.Where(s => s.Name.Contains(search) || s.Address.Contains(search));
         }
 
-        var stations = await query
+        var rawStations = await query
             .Where(s => s.Status == StationStatus.ACTIVE)
-            .Select(s => new StationListItemDto
+            .Select(s => new
             {
-                Id = s.Id,
-                Name = s.Name,
-                Address = s.Address,
-                Latitude = s.Latitude,
-                Longitude = s.Longitude,
+                s.Id,
+                s.Name,
+                s.Address,
+                s.Latitude,
+                s.Longitude,
                 Status = s.Status.ToString(),
-                TotalS = s.TotalS,
-                TotalM = s.TotalM,
-                TotalL = s.TotalL
+                s.OpensAt,
+                s.ClosesAt,
+                s.TotalS,
+                s.TotalM,
+                s.TotalL,
+                AvailableS = s.Lockers.Count(l => l.Size == LockerSize.S && l.BusinessStatus == LockerBusinessStatus.AVAILABLE && l.HealthStatus == LockerHealthStatus.HEALTHY),
+                AvailableM = s.Lockers.Count(l => l.Size == LockerSize.M && l.BusinessStatus == LockerBusinessStatus.AVAILABLE && l.HealthStatus == LockerHealthStatus.HEALTHY),
+                AvailableL = s.Lockers.Count(l => l.Size == LockerSize.L && l.BusinessStatus == LockerBusinessStatus.AVAILABLE && l.HealthStatus == LockerHealthStatus.HEALTHY),
+                s.ContactPhone
             })
             .ToListAsync();
+
+        var stations = rawStations.Select(s => new StationListItemDto
+        {
+            Id = s.Id,
+            Name = s.Name,
+            Address = s.Address,
+            Latitude = s.Latitude,
+            Longitude = s.Longitude,
+            Status = s.Status,
+            OpensAt = s.OpensAt.ToString("HH:mm"),
+            ClosesAt = s.ClosesAt.ToString("HH:mm"),
+            TotalS = s.TotalS,
+            TotalM = s.TotalM,
+            TotalL = s.TotalL,
+            AvailableS = s.AvailableS,
+            AvailableM = s.AvailableM,
+            AvailableL = s.AvailableL,
+            ContactPhone = s.ContactPhone
+        }).ToList();
 
         return Ok(ApiResponse<List<StationListItemDto>>.SuccessResponse(stations));
     }
