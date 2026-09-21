@@ -8,7 +8,7 @@ public class AccessCredentialConfiguration : IEntityTypeConfiguration<AccessCred
 {
     public void Configure(EntityTypeBuilder<AccessCredential> builder)
     {
-        builder.ToTable("AccessCredentials");
+        builder.ToTable("AccessCredentials", tb => tb.UseSqlOutputClause(false));
 
         builder.HasKey(x => x.Id);
 

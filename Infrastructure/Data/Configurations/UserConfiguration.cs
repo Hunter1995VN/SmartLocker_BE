@@ -9,7 +9,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
-        builder.ToTable("Users");
+        builder.ToTable("Users", tb => tb.UseSqlOutputClause(false));
 
         builder.HasKey(x => x.Id);
 

@@ -8,7 +8,7 @@ public class BookingExtensionConfiguration : IEntityTypeConfiguration<BookingExt
 {
     public void Configure(EntityTypeBuilder<BookingExtension> builder)
     {
-        builder.ToTable("BookingExtensions");
+        builder.ToTable("BookingExtensions", tb => tb.UseSqlOutputClause(false));
 
         builder.HasKey(x => x.Id);
 
