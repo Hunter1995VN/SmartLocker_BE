@@ -9,7 +9,7 @@ public class StationConfiguration : IEntityTypeConfiguration<Station>
 {
     public void Configure(EntityTypeBuilder<Station> builder)
     {
-        builder.ToTable("Stations");
+        builder.ToTable("Stations", tb => tb.UseSqlOutputClause(false));
 
         builder.HasKey(x => x.Id);
 
