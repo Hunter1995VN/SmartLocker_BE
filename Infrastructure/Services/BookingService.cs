@@ -122,11 +122,11 @@ public class BookingService : IBookingService
                 await _context.SaveChangesAsync();
 
                 // Create PayOS payment link
-                var (checkoutUrl, paymentLinkId) = await _paymentGateway.CreatePaymentLinkAsync(
+                var paymentResult = await _paymentGateway.CreatePaymentLinkAsync(
                     orderCode, (int)amount, $"Dat tu {bookingCode}", "", "");
 
-                payment.PaymentLink = checkoutUrl;
-                payment.GatewayTxnId = paymentLinkId;
+                payment.PaymentLink = paymentResult.CheckoutUrl;
+                payment.GatewayTxnId = paymentResult.PaymentLinkId;
                 await _context.SaveChangesAsync();
 
                 await transaction.CommitAsync();
@@ -136,8 +136,12 @@ public class BookingService : IBookingService
                     BookingId = booking.Id,
                     BookingCode = booking.BookingCode,
                     Amount = amount,
-                    PaymentUrl = checkoutUrl,
-                    PaymentExpiresAt = expiresAt
+                    PaymentUrl = paymentResult.CheckoutUrl,
+                    PaymentExpiresAt = expiresAt,
+                    QrCode = paymentResult.QrCode,
+                    AccountNumber = paymentResult.AccountNumber,
+                    AccountName = paymentResult.AccountName,
+                    Bin = paymentResult.Bin
                 }, "Tạo đặt tủ thành công. Vui lòng thanh toán trong 10 phút.");
             }
             catch (Exception ex)
