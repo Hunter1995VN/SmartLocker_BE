@@ -30,7 +30,7 @@ public class PayOSService : IPaymentGatewayService
         _logger.LogInformation("PayOS client initialized with ClientId: {ClientId}", clientId[..8] + "...");
     }
 
-    public async Task<(string CheckoutUrl, string PaymentLinkId)> CreatePaymentLinkAsync(
+    public async Task<Application.DTOs.Payment.PaymentLinkResult> CreatePaymentLinkAsync(
         long orderCode, int amount, string description, string returnUrl, string cancelUrl)
     {
         try
@@ -46,10 +46,18 @@ public class PayOSService : IPaymentGatewayService
 
             var result = await _client.PaymentRequests.CreateAsync(request);
 
-            _logger.LogInformation("PayOS payment link created: OrderCode={OrderCode}, CheckoutUrl={Url}",
-                orderCode, result.CheckoutUrl);
+            _logger.LogInformation("PayOS payment link created: OrderCode={OrderCode}, CheckoutUrl={Url}, QrCodeLength={QrLen}",
+                orderCode, result.CheckoutUrl, result.QrCode?.Length ?? 0);
 
-            return (result.CheckoutUrl, result.PaymentLinkId);
+            return new Application.DTOs.Payment.PaymentLinkResult
+            {
+                CheckoutUrl = result.CheckoutUrl,
+                PaymentLinkId = result.PaymentLinkId,
+                QrCode = result.QrCode,
+                AccountNumber = result.AccountNumber,
+                AccountName = result.AccountName,
+                Bin = result.Bin
+            };
         }
         catch (Exception ex)
         {
