@@ -19,6 +19,11 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<BookingExtension> BookingExtensions => Set<BookingExtension>();
     public DbSet<AccessCredential> AccessCredentials => Set<AccessCredential>();
+    public DbSet<IoTDevice> IoTDevices => Set<IoTDevice>();
+    public DbSet<SecurityIncident> SecurityIncidents => Set<SecurityIncident>();
+    public DbSet<MaintenanceTicket> MaintenanceTickets => Set<MaintenanceTicket>();
+    public DbSet<AbandonedPropertyRecord> AbandonedPropertyRecords => Set<AbandonedPropertyRecord>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
