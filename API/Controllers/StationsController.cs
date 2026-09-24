@@ -114,31 +114,31 @@ public class StationsController : ControllerBase
         dto.PriceM = policies.FirstOrDefault(p => p.Size == LockerSize.M)?.PricePerBlock;
         dto.PriceL = policies.FirstOrDefault(p => p.Size == LockerSize.L)?.PricePerBlock;
 
-        // Calculate availability if time range provided
-        if (startAt.HasValue && endAt.HasValue)
+        // Calculate availability (if time range not provided, default to current time window)
+        var fromTime = startAt ?? DateTime.UtcNow;
+        var toTime = endAt ?? fromTime.AddHours(3);
+
+        var activeStatuses = new[] { BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.STORED };
+
+        foreach (var size in new[] { LockerSize.S, LockerSize.M, LockerSize.L })
         {
-            var activeStatuses = new[] { BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED, BookingStatus.STORED };
+            var totalBookable = await _db.Lockers.AsNoTracking()
+                .CountAsync(l => l.StationId == id && l.Size == size
+                    && l.BusinessStatus == LockerBusinessStatus.AVAILABLE
+                    && l.HealthStatus == LockerHealthStatus.HEALTHY);
 
-            foreach (var size in new[] { LockerSize.S, LockerSize.M, LockerSize.L })
+            var overlapping = await _db.Bookings.AsNoTracking()
+                .CountAsync(b => b.StationId == id && b.Size == size
+                    && activeStatuses.Contains(b.Status)
+                    && b.StartAt < toTime && b.EndAt > fromTime);
+
+            var available = Math.Max(0, totalBookable - overlapping);
+
+            switch (size)
             {
-                var totalBookable = await _db.Lockers.AsNoTracking()
-                    .CountAsync(l => l.StationId == id && l.Size == size
-                        && l.BusinessStatus == LockerBusinessStatus.AVAILABLE
-                        && l.HealthStatus == LockerHealthStatus.HEALTHY);
-
-                var overlapping = await _db.Bookings.AsNoTracking()
-                    .CountAsync(b => b.StationId == id && b.Size == size
-                        && activeStatuses.Contains(b.Status)
-                        && b.StartAt < endAt.Value && b.EndAt > startAt.Value);
-
-                var available = Math.Max(0, totalBookable - overlapping);
-
-                switch (size)
-                {
-                    case LockerSize.S: dto.AvailableS = available; break;
-                    case LockerSize.M: dto.AvailableM = available; break;
-                    case LockerSize.L: dto.AvailableL = available; break;
-                }
+                case LockerSize.S: dto.AvailableS = available; break;
+                case LockerSize.M: dto.AvailableM = available; break;
+                case LockerSize.L: dto.AvailableL = available; break;
             }
         }
 
