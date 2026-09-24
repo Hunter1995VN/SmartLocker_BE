@@ -2,7 +2,7 @@ namespace Domain.Entities;
 
 public class AuditLog
 {
-    public Guid Id { get; set; }
+    public long Id { get; set; }
     public Guid? UserId { get; set; }
     public string? UserEmail { get; set; }
     public string? UserRole { get; set; }

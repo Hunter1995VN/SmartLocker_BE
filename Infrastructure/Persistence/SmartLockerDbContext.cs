@@ -78,7 +78,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng Stations ===
         modelBuilder.Entity<Station>(entity =>
         {
-            entity.ToTable("Stations");
+            entity.ToTable("Stations", t => t.HasTrigger("trg_Stations_UpdatedAt"));
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(s => s.Name).IsRequired().HasMaxLength(150);
@@ -92,7 +92,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng Lockers ===
         modelBuilder.Entity<Locker>(entity =>
         {
-            entity.ToTable("Lockers");
+            entity.ToTable("Lockers", t => t.HasTrigger("trg_Lockers_UpdatedAt"));
             entity.HasKey(l => l.Id);
             entity.Property(l => l.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(l => l.LockerCode).IsRequired().HasMaxLength(50);
@@ -120,7 +120,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng Bookings ===
         modelBuilder.Entity<Booking>(entity =>
         {
-            entity.ToTable("Bookings");
+            entity.ToTable("Bookings", t => t.HasTrigger("trg_Bookings_UpdatedAt"));
             entity.HasKey(b => b.Id);
             entity.Property(b => b.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(b => b.BookingCode).IsRequired().HasMaxLength(50);
@@ -132,7 +132,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng Payments ===
         modelBuilder.Entity<Payment>(entity =>
         {
-            entity.ToTable("Payments");
+            entity.ToTable("Payments", t => t.HasTrigger("trg_Payments_UpdatedAt"));
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(p => p.Amount).HasColumnType("decimal(12,2)");
@@ -143,10 +143,11 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng IoTDevices ===
         modelBuilder.Entity<IoTDevice>(entity =>
         {
-            entity.ToTable("IoTDevices");
+            entity.ToTable("IoTDevices", t => t.HasTrigger("trg_IoTDevices_UpdatedAt"));
             entity.HasKey(d => d.Id);
             entity.Property(d => d.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(d => d.DeviceCode).IsRequired().HasMaxLength(50);
+            entity.Property(d => d.ConnectivityStatus).HasMaxLength(10);
 
             entity.HasOne(d => d.Station)
                 .WithMany()
@@ -157,7 +158,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng SecurityIncidents ===
         modelBuilder.Entity<SecurityIncident>(entity =>
         {
-            entity.ToTable("SecurityIncidents");
+            entity.ToTable("SecurityIncidents", t => t.HasTrigger("trg_SecurityIncidents_UpdatedAt"));
             entity.HasKey(i => i.Id);
             entity.Property(i => i.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(i => i.IncidentCode).IsRequired().HasMaxLength(50);
@@ -178,7 +179,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng MaintenanceTickets ===
         modelBuilder.Entity<MaintenanceTicket>(entity =>
         {
-            entity.ToTable("MaintenanceTickets");
+            entity.ToTable("MaintenanceTickets", t => t.HasTrigger("trg_MaintenanceTickets_UpdatedAt"));
             entity.HasKey(m => m.Id);
             entity.Property(m => m.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(m => m.TicketCode).IsRequired().HasMaxLength(50);
@@ -198,7 +199,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng AbandonedPropertyRecords ===
         modelBuilder.Entity<AbandonedPropertyRecord>(entity =>
         {
-            entity.ToTable("AbandonedPropertyRecords");
+            entity.ToTable("AbandonedPropertyRecords", t => t.HasTrigger("trg_AbandonedProperty_UpdatedAt"));
             entity.HasKey(a => a.Id);
             entity.Property(a => a.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(a => a.RecordCode).IsRequired().HasMaxLength(50);
@@ -220,7 +221,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         {
             entity.ToTable("AuditLogs");
             entity.HasKey(l => l.Id);
-            entity.Property(l => l.Id).HasDefaultValueSql("newsequentialid()");
+            entity.Property(l => l.Id).ValueGeneratedOnAdd();
             entity.Property(l => l.Action).IsRequired().HasMaxLength(100);
             entity.Property(l => l.TargetEntity).IsRequired().HasMaxLength(100);
         });

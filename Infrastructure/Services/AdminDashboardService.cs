@@ -45,7 +45,7 @@ public class AdminDashboardService : IAdminDashboardService
             .CountAsync(b => activeStatuses.Contains(b.Status));
 
         var offlineIoT = await _db.IoTDevices.AsNoTracking()
-            .CountAsync(d => d.Status == "OFFLINE" || d.Status == "ERROR");
+            .CountAsync(d => d.ConnectivityStatus == "OFFLINE" || d.ConnectivityStatus == "DEGRADED");
 
         var openIncidents = await _db.SecurityIncidents.AsNoTracking()
             .CountAsync(i => i.Status == IncidentStatus.OPEN || i.Status == IncidentStatus.IN_PROGRESS);
