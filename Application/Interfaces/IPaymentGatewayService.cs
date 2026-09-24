@@ -1,12 +1,14 @@
+using Application.DTOs.Payment;
+
 namespace Application.Interfaces;
 
 public interface IPaymentGatewayService
 {
     /// <summary>
-    /// Tạo link thanh toán. Trả về (checkoutUrl, paymentLinkId).
+    /// Tạo link thanh toán. Trả về PaymentLinkResult (checkoutUrl, paymentLinkId, qrCode, accountNumber, accountName, bin).
     /// OrderCode phải là số nguyên (PayOS yêu cầu long).
     /// </summary>
-    Task<(string CheckoutUrl, string PaymentLinkId)> CreatePaymentLinkAsync(
+    Task<PaymentLinkResult> CreatePaymentLinkAsync(
         long orderCode, int amount, string description, string returnUrl, string cancelUrl);
 
     /// <summary>

@@ -28,6 +28,10 @@ public class BookingDto
     // Related data
     public List<PaymentDto> Payments { get; set; } = new();
 
+    // Access credentials for Kiosk Check-in (UC-T04)
+    public string? AccessCode { get; set; }
+    public string? QrPayload { get; set; }
+
     // Derived fields (calculated at response time)
     public decimal? CurrentOverdueFee { get; set; }
     public decimal? EstimatedRefundAmount { get; set; }
