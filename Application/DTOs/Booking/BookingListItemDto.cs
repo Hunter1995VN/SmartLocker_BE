@@ -9,6 +9,8 @@ public class BookingListItemDto
     public string Status { get; set; } = string.Empty;
     public DateTime StartAt { get; set; }
     public DateTime EndAt { get; set; }
+    public string? LockerCode { get; set; }
+    public string? AccessCode { get; set; }
     public decimal BaseAmount { get; set; }
     public bool IsOverdue { get; set; }
     public DateTime CreatedAt { get; set; }
