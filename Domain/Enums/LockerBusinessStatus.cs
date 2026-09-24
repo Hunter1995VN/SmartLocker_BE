@@ -5,5 +5,7 @@ public enum LockerBusinessStatus
     AVAILABLE,
     RESERVED,
     OCCUPIED,
-    BLOCKED
+    BLOCKED,
+    MAINTENANCE,
+    DISABLED
 }

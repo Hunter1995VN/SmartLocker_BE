@@ -1,6 +1,252 @@
-@API_HostAddress = http://localhost:5005
+@Host = http://localhost:5000
+@AdminToken = YOUR_ADMIN_TOKEN_HERE
 
-GET {{API_HostAddress}}/weatherforecast/
+### ================================================================
+### 0. HEALTH CHECK
+### ================================================================
+GET {{Host}}/api/health
 Accept: application/json
 
-###
+### ================================================================
+### 1. UC-A01: ĐĂNG NHẬP ADMIN / STAFF
+### ================================================================
+# @name adminLogin
+POST {{Host}}/api/admin/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@smartlocker.vn",
+  "password": "AdminPassword@123"
+}
+
+### ================================================================
+### 2. UC-A03 & A04: QUẢN LÝ TRẠM & BẢNG GIÁ
+### ================================================================
+
+### 2.1 Lấy danh sách trạm
+GET {{Host}}/api/admin/stations
+Authorization: Bearer {{AdminToken}}
+
+### 2.2 Tạo trạm mới (Tự động sinh tủ S/M/L và 3 bảng giá mặc định)
+# @name createStation
+POST {{Host}}/api/admin/stations
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "name": "Trạm Locker Bến Xe Miền Đông Mới",
+  "address": "Đường Hoàng Hữu Nam, Long Bình, TP. Thủ Đức, TP.HCM",
+  "latitude": 10.878200,
+  "longitude": 106.829100,
+  "opensAt": "05:00",
+  "closesAt": "23:30",
+  "contactPhone": "0987654321",
+  "totalS": 6,
+  "totalM": 4,
+  "totalL": 2,
+  "priceSPerBlock": 10000,
+  "priceMPerBlock": 15000,
+  "priceLPerBlock": 20000
+}
+
+### 2.3 Xem chi tiết trạm kèm bảng giá
+@stationId = {{createStation.response.body.data.id}}
+GET {{Host}}/api/admin/stations/{{stationId}}
+Authorization: Bearer {{AdminToken}}
+
+### 2.4 Cập nhật thông tin trạm
+PUT {{Host}}/api/admin/stations/{{stationId}}
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "name": "Trạm Locker Bến Xe Miền Đông Mới (Đã Cập Nhật)",
+  "address": "Khu vực sảnh A, Bến Xe Miền Đông Mới",
+  "latitude": 10.878200,
+  "longitude": 106.829100,
+  "status": "ACTIVE",
+  "opensAt": "05:00",
+  "closesAt": "23:59",
+  "contactPhone": "0987654321"
+}
+
+### 2.5 Cập nhật bảng giá cỡ M của trạm
+PUT {{Host}}/api/admin/stations/{{stationId}}/pricing
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "size": "M",
+  "pricePerBlock": 18000,
+  "blockHours": 1,
+  "overdueFeePerHour": 27000,
+  "gracePeriodMinutes": 15
+}
+
+### ================================================================
+### 3. UC-A05 & S-01: SƠ ĐỒ LƯỚI Ô TỦ (GRID) & BẢO TRÌ
+### ================================================================
+
+### 3.1 Xem ma trận sơ đồ ô tủ thời gian thực (Locker Grid)
+GET {{Host}}/api/admin/lockers/station/{{stationId}}/grid
+Authorization: Bearer {{AdminToken}}
+
+### 3.2 Đổi trạng thái tủ sang BẢO TRÌ (MAINTENANCE)
+@lockerId = YOUR_LOCKER_ID_HERE
+PATCH {{Host}}/api/admin/lockers/{{lockerId}}/status
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "businessStatus": "MAINTENANCE",
+  "healthStatus": "WARNING",
+  "reason": "Chốt khóa điện từ phản hồi chậm"
+}
+
+### 3.3 Tạo phiếu yêu cầu bảo trì sửa chữa (Maintenance Ticket)
+POST {{Host}}/api/admin/lockers/maintenance-tickets
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "lockerId": "{{lockerId}}",
+  "issueDescription": "Cần thay cảm biến từ của cửa tủ",
+  "priority": "HIGH"
+}
+
+### ================================================================
+### 4. UC-A06: QUẢN LÝ NHÂN VIÊN & TÀI KHOẢN NỘI BỘ
+### ================================================================
+
+### 4.1 Danh sách người dùng / nhân viên
+GET {{Host}}/api/admin/users?page=1&pageSize=20
+Authorization: Bearer {{AdminToken}}
+
+### 4.2 Tạo tài khoản nhân viên Staff mới
+POST {{Host}}/api/admin/users/staff
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "fullName": "Nguyễn Văn Kỹ Thuật",
+  "email": "staff.thuduc@smartlocker.vn",
+  "phone": "0909123456",
+  "password": "StaffPassword@123",
+  "role": "STAFF"
+}
+
+### 4.3 Khóa tài khoản
+@targetUserId = YOUR_TARGET_USER_ID_HERE
+PATCH {{Host}}/api/admin/users/{{targetUserId}}/status
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "status": "LOCKED",
+  "reason": "Vi phạm quy định vận hành"
+}
+
+### ================================================================
+### 5. UC-T14, A08, S-02: TIẾP NHẬN SỰ CỐ & CỨU HỘ MỞ TỦ TỪ XA
+### ================================================================
+
+### 5.1 Báo cáo sự cố (Khách báo kẹt tủ)
+# @name createIncident
+POST {{Host}}/api/admin/incidents
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "stationId": "{{stationId}}",
+  "lockerId": "{{lockerId}}",
+  "type": "DOOR_JAMMED",
+  "severity": "HIGH",
+  "description": "Khách hàng nhập đúng mã PIN nhưng cửa chốt không bật ra"
+}
+
+### 5.2 Xem danh sách sự cố
+GET {{Host}}/api/admin/incidents?status=OPEN
+Authorization: Bearer {{AdminToken}}
+
+### 5.3 Mở khóa tủ khẩn cấp từ xa theo sự cố (Remote Emergency Unlock)
+@incidentId = {{createIncident.response.body.data.id}}
+POST {{Host}}/api/admin/incidents/{{incidentId}}/remote-unlock
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "reason": "Đã xác minh CMND/SĐT trùng khớp với người đặt booking, tiến hành mở từ xa"
+}
+
+### 5.4 Mở khóa tủ từ xa trực tiếp (Emergency Direct)
+POST {{Host}}/api/admin/incidents/lockers/{{lockerId}}/remote-unlock
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "reason": "Kiểm tra kỹ thuật định kỳ cửa tủ"
+}
+
+### ================================================================
+### 6. UC-A09 & S-03: KIỂM KÊ TÀI SẢN BỎ QUÊN (QUY TRÌNH 4 MẮT)
+### ================================================================
+
+### 6.1 MẮT 1 (Staff): Lập biên bản kiểm kê đồ bỏ quên
+# @name createAbandoned
+POST {{Host}}/api/admin/abandoned-properties
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "bookingId": "YOUR_BOOKING_ID_HERE",
+  "stationId": "{{stationId}}",
+  "lockerId": "{{lockerId}}",
+  "overdueHours": 48,
+  "itemDescription": "01 Vali màu đen Samsonite, 01 túi xách nhỏ màu nâu",
+  "photoUrls": [
+    "https://storage.smartlocker.vn/photos/abp_01.jpg",
+    "https://storage.smartlocker.vn/photos/abp_02.jpg"
+  ],
+  "notes": "Đơn quá hạn hơn 48h, đã gọi hotline khách không liên lạc được"
+}
+
+### 6.2 Xem danh sách biên bản chờ duyệt
+GET {{Host}}/api/admin/abandoned-properties?status=PENDING_APPROVAL
+Authorization: Bearer {{AdminToken}}
+
+### 6.3 MẮT 2 (Admin): Phê duyệt biên bản mở tủ và chuyển lưu kho
+@recordId = {{createAbandoned.response.body.data.id}}
+POST {{Host}}/api/admin/abandoned-properties/{{recordId}}/approve
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "action": "STORED_IN_WAREHOUSE",
+  "approvalNotes": "Đã duyệt biên bản, nhân viên niêm phong chuyển về kho trung tâm"
+}
+
+### 6.4 Hoàn tất xử lý tài sản (Giải phóng tủ về AVAILABLE)
+POST {{Host}}/api/admin/abandoned-properties/{{recordId}}/resolve
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "disposalAction": "STORED_IN_WAREHOUSE",
+  "notes": "Đã nhập kho bảo quản số 02"
+}
+
+### ================================================================
+### 7. UC-A02: DASHBOARD THỐNG KÊ VẬN HÀNH THỜI GIAN THỰC
+### ================================================================
+
+### 7.1 Thống kê chỉ số KPI tổng quan
+GET {{Host}}/api/admin/dashboard/stats
+Authorization: Bearer {{AdminToken}}
+
+### 7.2 Dữ liệu biểu đồ doanh thu
+GET {{Host}}/api/admin/dashboard/revenue-chart?days=14
+Authorization: Bearer {{AdminToken}}
+
+### 7.3 Tỷ lệ lấp đầy các trạm tủ
+GET {{Host}}/api/admin/dashboard/station-occupancies
+Authorization: Bearer {{AdminToken}}
