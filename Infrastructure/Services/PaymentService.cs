@@ -156,6 +156,9 @@ public class PaymentService : IPaymentService
                 JsonSerializer.Serialize(new
                 {
                     bookingId = payment.BookingId,
+                    bookingCode = payment.Booking.BookingCode,
+                    stationId = payment.Booking.StationId,
+                    accessCode = randomCode,
                     nonce = Guid.NewGuid().ToString("N"),
                     expiresAt = payment.Booking.EndAt
                 })));
@@ -167,6 +170,7 @@ public class PaymentService : IPaymentService
                 QrNonce = Guid.NewGuid().ToString("N"),
                 QrExpiresAt = payment.Booking.EndAt,
                 AccessCodeHash = hashString,
+                OfflinePayload = randomCode,
                 IsActive = true,
                 IssuedAt = DateTime.UtcNow
             });

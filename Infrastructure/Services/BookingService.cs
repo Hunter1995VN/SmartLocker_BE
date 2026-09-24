@@ -162,6 +162,7 @@ public class BookingService : IBookingService
             .Include(b => b.Station)
             .Include(b => b.Locker)
             .Include(b => b.Payments)
+            .Include(b => b.AccessCredential)
             .FirstOrDefaultAsync(b => b.Id == bookingId);
 
         if (booking == null) return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy đặt tủ.");
@@ -201,6 +202,8 @@ public class BookingService : IBookingService
 
         var total = await query.CountAsync();
         var items = await query.OrderByDescending(b => b.CreatedAt)
+            .Include(b => b.Locker)
+            .Include(b => b.AccessCredential)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(b => new BookingListItemDto
@@ -212,6 +215,8 @@ public class BookingService : IBookingService
                 Status = b.Status.ToString(),
                 StartAt = b.StartAt,
                 EndAt = b.EndAt,
+                LockerCode = b.Locker != null ? b.Locker.LockerCode : null,
+                AccessCode = b.AccessCredential != null ? b.AccessCredential.OfflinePayload : null,
                 BaseAmount = b.BaseAmount,
                 IsOverdue = b.IsOverdue,
                 CreatedAt = b.CreatedAt
@@ -389,6 +394,8 @@ public class BookingService : IBookingService
         StationName = booking.Station.Name,
         StationAddress = booking.Station.Address,
         LockerCode = booking.Locker?.LockerCode,
+        AccessCode = booking.AccessCredential?.OfflinePayload,
+        QrPayload = booking.AccessCredential?.QrPayload,
         Size = booking.Size.ToString(),
         Status = booking.Status.ToString(),
         StartAt = booking.StartAt,
