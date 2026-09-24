@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Domain.Interfaces;
+using Application.Interfaces;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Repositories;
 using Infrastructure.Services;
@@ -27,7 +28,7 @@ public static class DependencyInjection
         services.Configure<SmtpSettings>(config.GetSection("SmtpSettings"));
         services.Configure<JwtSettings>(config.GetSection("JwtSettings"));
 
-        // 3. Đăng ký các service đã implement
+        // 3. Đăng ký các service Auth (Quân)
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IOtpRepository, OtpRepository>();
         services.AddSingleton<IOtpGenerator, OtpGenerator>();
@@ -35,6 +36,14 @@ public static class DependencyInjection
         services.AddScoped<IOtpSender, EmailOtpSender>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddHttpClient<IGoogleAuthService, GoogleAuthService>();
+
+        // 4. Đăng ký các service Admin (Phân hệ Quản trị Vận hành)
+        services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<IAdminDashboardService, AdminDashboardService>();
+        services.AddScoped<IAdminStationLockerService, AdminStationLockerService>();
+        services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IAdminIncidentService, AdminIncidentService>();
+        services.AddScoped<IAdminAbandonedPropertyService, AdminAbandonedPropertyService>();
 
         return services;
     }

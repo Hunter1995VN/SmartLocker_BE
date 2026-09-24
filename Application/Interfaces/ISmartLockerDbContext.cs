@@ -13,6 +13,11 @@ public interface ISmartLockerDbContext
     DbSet<Payment> Payments { get; }
     DbSet<BookingExtension> BookingExtensions { get; }
     DbSet<AccessCredential> AccessCredentials { get; }
+    DbSet<IoTDevice> IoTDevices { get; }
+    DbSet<SecurityIncident> SecurityIncidents { get; }
+    DbSet<MaintenanceTicket> MaintenanceTickets { get; }
+    DbSet<AbandonedPropertyRecord> AbandonedPropertyRecords { get; }
+    DbSet<AuditLog> AuditLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }

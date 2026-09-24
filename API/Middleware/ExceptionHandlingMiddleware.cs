@@ -33,9 +33,17 @@ public class ExceptionHandlingMiddleware
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
+        var errors = new List<string> { exception.Message };
+        var inner = exception.InnerException;
+        while (inner != null)
+        {
+            errors.Add(inner.Message);
+            inner = inner.InnerException;
+        }
+
         var response = ApiResponse<object>.ErrorResponse(
             "\u0110\u00e3 x\u1ea3y ra l\u1ed7i h\u1ec7 th\u1ed1ng. Vui l\u00f2ng th\u1eed l\u1ea1i sau.",
-            new List<string> { exception.Message }
+            errors
         );
 
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
