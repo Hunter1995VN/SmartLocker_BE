@@ -46,8 +46,11 @@ public class JwtTokenService : IJwtTokenService
             new("uid", userId.ToString())
         };
 
-        // 2. Tạo signing key từ SecretKey
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SecretKey));
+        // 2. Tạo signing key từ SecretKey (fallback nếu chưa cấu hình)
+        var secretKey = string.IsNullOrEmpty(_settings.SecretKey)
+            ? "SmartLocker.Super.Secret.Key.2025.MinLength32Chars"
+            : _settings.SecretKey;
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         // 3. Tạo token
