@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using SmartLocker.Domain.Entities;
-using SmartLocker.Domain.Interfaces;
+using Domain.Entities;
+using Domain.Interfaces;
 
-namespace SmartLocker.Infrastructure.Persistence.Repositories;
+namespace Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Repository thao tác với bảng OtpCodes bằng EF Core.

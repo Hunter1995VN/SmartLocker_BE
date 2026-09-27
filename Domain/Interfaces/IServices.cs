@@ -1,4 +1,4 @@
-namespace SmartLocker.Domain.Interfaces;
+namespace Domain.Interfaces;
 
 /// <summary>
 /// Giao diện trừu tượng cho dịch vụ gửi OTP qua kênh Email / SMS.

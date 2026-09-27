@@ -1,4 +1,4 @@
-namespace SmartLocker.Application.DTOs;
+namespace Application.DTOs;
 
 /// <summary>
 /// Kết quả trả về thống nhất từ các handler - giống Result pattern.

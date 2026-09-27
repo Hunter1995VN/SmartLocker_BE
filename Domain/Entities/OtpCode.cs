@@ -1,4 +1,4 @@
-namespace SmartLocker.Domain.Entities;
+namespace Domain.Entities;
 
 /// <summary>
 /// Bảng OtpCodes - Lưu mã OTP dùng để xác thực đăng ký, đăng nhập, quên mật khẩu.

@@ -1,8 +1,7 @@
-namespace SmartLocker.Domain.Entities;
+namespace Domain.Entities;
 
-/// <summary>
-/// Bảng Users - Lưu trữ thông tin tài khoản người dùng hệ thống SmartLocker
-/// </summary>
+using Domain.Enums;
+
 public class User
 {
     public Guid Id { get; set; }
@@ -10,12 +9,16 @@ public class User
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
-    public string Role { get; set; } = "TRAVELER"; // STAFF | ADMIN | TRAVELER
-    public string Status { get; set; } = "PENDING_VERIFICATION"; // PENDING_VERIFICATION | ACTIVE | SUSPENDED | DELETED
-    public decimal OverdueDebt { get; set; } = 0m;
+    public UserRole Role { get; set; } = UserRole.TRAVELER;
+    public UserStatus Status { get; set; } = UserStatus.PENDING_VERIFICATION;
+    public decimal OverdueDebt { get; set; }
+    // Thêm từ module Auth (Quân): Google OAuth và Avatar
     public string? GoogleId { get; set; }
     public string? AvatarUrl { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    // Navigation
+    public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 }

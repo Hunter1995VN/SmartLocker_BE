@@ -1,6 +1,6 @@
-using SmartLocker.Domain.Interfaces;
+using Domain.Interfaces;
 
-namespace SmartLocker.Infrastructure.Services;
+namespace Infrastructure.Services;
 
 /// <summary>
 /// Sinh mã OTP 6 chữ số ngẫu nhiên (an toàn về mặt crypto).

@@ -1,4 +1,4 @@
-namespace SmartLocker.Domain.Interfaces;
+namespace Domain.Interfaces;
 
 /// <summary>
 /// Sinh và validate JSON Web Token (JWT) dùng cho xác thực stateless.

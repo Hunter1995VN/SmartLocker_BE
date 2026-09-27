@@ -2,9 +2,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using SmartLocker.Domain.Interfaces;
+using Domain.Interfaces;
 
-namespace SmartLocker.Infrastructure.Services;
+namespace Infrastructure.Services;
 
 public class GoogleAuthService : IGoogleAuthService
 {

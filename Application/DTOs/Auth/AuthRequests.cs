@@ -1,4 +1,4 @@
-namespace SmartLocker.Application.DTOs.Auth;
+namespace Application.DTOs.Auth;
 
 /// <summary>
 /// Request đăng ký tài khoản mới.

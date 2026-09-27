@@ -11,6 +11,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- EF Core abstractions cho DbContext interface -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.12" />
+    <!-- Packages từ module Auth (Quân) -->
     <PackageReference Include="MediatR" Version="12.2.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="FluentValidation" Version="11.9.0" />

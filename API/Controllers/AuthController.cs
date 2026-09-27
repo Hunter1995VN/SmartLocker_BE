@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
-using SmartLocker.Application.DTOs;
-using SmartLocker.Application.DTOs.Auth;
-using SmartLocker.Application.Services;
+using Application.DTOs;
+using Application.DTOs.Auth;
+using Application.Services;
 
-namespace SmartLocker.API.Controllers;
+namespace API.Controllers;
 
 /// <summary>
 /// Controller xử lý mọi flow xác thực: Đăng ký, Xác thực OTP, Đăng nhập, Quên/Đặt lại mật khẩu.

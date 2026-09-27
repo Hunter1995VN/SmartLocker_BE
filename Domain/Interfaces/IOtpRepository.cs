@@ -1,6 +1,6 @@
-using SmartLocker.Domain.Entities;
+using Domain.Entities;
 
-namespace SmartLocker.Domain.Interfaces;
+namespace Domain.Interfaces;
 
 /// <summary>
 /// Giao diện Repository cho bảng OtpCodes.
