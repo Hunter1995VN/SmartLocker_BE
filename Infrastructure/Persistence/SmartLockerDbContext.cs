@@ -34,7 +34,8 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng Users ===
         modelBuilder.Entity<User>(entity =>
         {
-            entity.ToTable("Users");
+            // Users has database triggers; SQL Server rejects OUTPUT without INTO on this table.
+            entity.ToTable("Users", table => table.UseSqlOutputClause(false));
             entity.HasKey(u => u.Id);
             entity.Property(u => u.Id).HasDefaultValueSql("newsequentialid()");
 

@@ -16,6 +16,10 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
+        services.Configure<Infrastructure.Mqtt.MqttOptions>(config.GetSection("Mqtt"));
+        services.AddScoped<Infrastructure.Mqtt.DoorEventHandler>();
+        services.AddHostedService<Infrastructure.Mqtt.MqttSubscriberService>();
+
         // 1. Kết nối SQL Server — hỗ trợ cả DefaultConnection (Nhiệm) và Default (Quân)
         var connStr = config.GetConnectionString("DefaultConnection") 
             ?? config.GetConnectionString("Default")
