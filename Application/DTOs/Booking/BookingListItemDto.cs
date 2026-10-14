@@ -9,6 +9,9 @@ public class BookingListItemDto
     public string Status { get; set; } = string.Empty;
     public DateTime StartAt { get; set; }
     public DateTime EndAt { get; set; }
+    public DateTime? CheckedInAt { get; set; }
+    public DateTime? HoldExpiresAt { get; set; }
+    public double DurationHours { get; set; }
     public string? LockerCode { get; set; }
     public string? AccessCode { get; set; }
     public decimal BaseAmount { get; set; }
