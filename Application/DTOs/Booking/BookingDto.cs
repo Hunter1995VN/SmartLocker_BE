@@ -23,6 +23,8 @@ public class BookingDto
     public short ExtensionCount { get; set; }
     public string? CancellationReason { get; set; }
     public decimal? CancelPolicyRate { get; set; }
+    public DateTime? HoldExpiresAt { get; set; }
+    public double DurationHours { get; set; }
     public DateTime CreatedAt { get; set; }
 
     // Related data

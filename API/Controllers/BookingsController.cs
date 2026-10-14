@@ -132,4 +132,38 @@ public class BookingsController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// UC-T04: Check-in / Mở tủ nhận chỗ tại Kiosk (bắt đầu tính giờ đặt tủ)
+    /// </summary>
+    [HttpPost("{id:guid}/check-in")]
+    public async Task<IActionResult> CheckInBooking(Guid id)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
+
+        var result = await _bookingService.CheckInBookingAsync(userId, id);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Check-out: Mở tủ lấy đồ và hoàn tất lượt gửi tủ
+    /// </summary>
+    [HttpPost("{id:guid}/check-out")]
+    public async Task<IActionResult> CheckOutBooking(Guid id)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
+
+        var result = await _bookingService.CheckOutBookingAsync(userId, id);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
 }
