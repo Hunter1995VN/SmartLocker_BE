@@ -33,6 +33,7 @@ public class NoShowJob : BackgroundService
                 
                 var confirmedBookings = await context.Bookings
                     .Include(b => b.PricingPolicy)
+                    .Include(b => b.Payments)
                     .Where(b => b.Status == BookingStatus.CONFIRMED)
                     .ToListAsync(stoppingToken);
 
@@ -41,20 +42,17 @@ public class NoShowJob : BackgroundService
 
                 foreach (var booking in confirmedBookings)
                 {
-                    var policy = booking.PricingPolicy;
-                    if (policy == null && booking.PricingPolicyId != null)
-                    {
-                        policy = await context.PricingPolicies.FindAsync(new object[] { booking.PricingPolicyId }, stoppingToken);
-                    }
+                    var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
+                    var confirmedAt = basePayment?.PaidAt ?? booking.CreatedAt;
+                    // Thời gian giữ chỗ 30 phút từ lúc thanh toán thành công
+                    var holdMinutes = booking.PricingPolicy?.NoShowWindowMinutes > 0 ? booking.PricingPolicy.NoShowWindowMinutes : 30;
+                    var limitTime = confirmedAt.AddMinutes(holdMinutes);
 
-                    if (policy != null)
+                    if (now > limitTime)
                     {
-                        var limitTime = booking.StartAt.AddMinutes(policy.NoShowWindowMinutes);
-                        if (now > limitTime)
-                        {
-                            booking.Status = BookingStatus.NO_SHOW;
-                            count++;
-                        }
+                        booking.Status = BookingStatus.NO_SHOW;
+                        booking.UpdatedAt = now;
+                        count++;
                     }
                 }
 
