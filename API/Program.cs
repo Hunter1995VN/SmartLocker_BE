@@ -152,4 +152,7 @@ app.MapControllers();
 // Health check endpoint
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
+// Redirect root to Swagger
+app.MapGet("/", () => Results.Redirect("/swagger/index.html"));
+
 app.Run();
