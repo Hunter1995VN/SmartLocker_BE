@@ -1,5 +1,6 @@
 namespace Infrastructure.Services;
 
+using System.Collections.Concurrent;
 using Application.DTOs.Booking;
 using Application.DTOs.Common;
 using Application.DTOs.Payment;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.Logging;
 
 public class BookingService : IBookingService
 {
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _bookingLocks = new();
     private readonly ISmartLockerDbContext _context;
     private readonly IPricingService _pricingService;
     private readonly IPaymentGatewayService _paymentGateway;
@@ -247,53 +249,93 @@ public class BookingService : IBookingService
 
     /// <summary>
     /// UC-T07: Gia hạn booking → tạo payment gia hạn → trả link PayOS
+    /// Bảo vệ chống concurrency double-click (TC_BKO_20) bằng SemaphoreSlim lock & Idempotency check.
     /// </summary>
     public async Task<ApiResponse<CreateBookingResponse>> ExtendBookingAsync(Guid userId, Guid bookingId, ExtendBookingRequest request)
     {
-        var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == bookingId);
-        if (booking == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không tìm thấy đặt tủ.");
-        if (booking.UserId != userId) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có quyền.");
-        if (booking.Status != BookingStatus.STORED) return ApiResponse<CreateBookingResponse>.ErrorResponse("Chỉ có thể gia hạn khi đang gửi đồ (trạng thái STORED).");
-        if (request.NewEndAt <= booking.EndAt) return ApiResponse<CreateBookingResponse>.ErrorResponse("Thời gian gia hạn phải lớn hơn thời gian kết thúc hiện tại.");
-
-        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
-        if (policy == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá.");
-
-        var totalDuration = (request.NewEndAt - booking.StartAt).TotalHours;
-        if (totalDuration > policy.MaxHours)
-            return ApiResponse<CreateBookingResponse>.ErrorResponse($"Tổng thời gian không được vượt quá {policy.MaxHours} giờ.");
-
-        var amount = await _pricingService.CalculateExtensionPriceAsync(booking, request.NewEndAt);
-        if (booking.IsOverdue) amount += _pricingService.CalculateOverdueFee(booking, policy);
-
-        var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + new Random().Next(1000, 9999).ToString());
-        var payment = new Payment
+        var semaphore = _bookingLocks.GetOrAdd(bookingId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync();
+        try
         {
-            BookingId = booking.Id,
-            Kind = PaymentKind.EXTENSION,
-            Status = PaymentStatus.PENDING,
-            Amount = amount,
-            OrderCode = orderCode.ToString(),
-            Gateway = "PAYOS",
-            WebhookPayload = $"{{\"NewEndAt\":\"{request.NewEndAt:O}\"}}"
-        };
-        _context.Payments.Add(payment);
-        await _context.SaveChangesAsync();
+            var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == bookingId);
+            if (booking == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không tìm thấy đặt tủ.");
+            if (booking.UserId != userId) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có quyền.");
+            if (booking.Status != BookingStatus.STORED) return ApiResponse<CreateBookingResponse>.ErrorResponse("Chỉ có thể gia hạn khi đang gửi đồ (trạng thái STORED).");
+            if (request.NewEndAt <= booking.EndAt) return ApiResponse<CreateBookingResponse>.ErrorResponse("Thời gian gia hạn phải lớn hơn thời gian kết thúc hiện tại.");
 
-        var (checkoutUrl, paymentLinkId) = await _paymentGateway.CreatePaymentLinkAsync(
-            orderCode, (int)amount, $"Gia han {booking.BookingCode}", "", "");
+            // TC_BKO_20: Kiểm tra xem đã có giao dịch gia hạn PENDING nào được tạo gần đây không (trong vòng 15 phút)
+            // Nếu có, tái sử dụng link cũ thay vì tạo 2 link PayOS trùng lặp
+            var existingPendingPayment = await _context.Payments
+                .Where(p => p.BookingId == booking.Id 
+                         && p.Kind == PaymentKind.EXTENSION 
+                         && p.Status == PaymentStatus.PENDING)
+                .OrderByDescending(p => p.CreatedAt)
+                .FirstOrDefaultAsync();
 
-        payment.PaymentLink = checkoutUrl;
-        payment.GatewayTxnId = paymentLinkId;
-        await _context.SaveChangesAsync();
+            if (existingPendingPayment != null)
+            {
+                if (existingPendingPayment.CreatedAt >= DateTime.UtcNow.AddMinutes(-15) && !string.IsNullOrEmpty(existingPendingPayment.PaymentLink))
+                {
+                    _logger.LogInformation("TC_BKO_20: Reusing existing pending extension payment for booking {BookingId}, orderCode {OrderCode}", 
+                        booking.Id, existingPendingPayment.OrderCode);
+                    return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
+                    {
+                        BookingId = booking.Id,
+                        BookingCode = booking.BookingCode,
+                        Amount = existingPendingPayment.Amount,
+                        PaymentUrl = existingPendingPayment.PaymentLink
+                    }, "Đã có yêu cầu thanh toán gia hạn đang chờ xử lý. Đang chuyển hướng...");
+                }
+                else
+                {
+                    existingPendingPayment.Status = PaymentStatus.EXPIRED;
+                    await _context.SaveChangesAsync();
+                }
+            }
 
-        return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
+            var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+            if (policy == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá.");
+
+            var totalDuration = (request.NewEndAt - booking.StartAt).TotalHours;
+            if (totalDuration > policy.MaxHours)
+                return ApiResponse<CreateBookingResponse>.ErrorResponse($"Tổng thời gian không được vượt quá {policy.MaxHours} giờ.");
+
+            var amount = await _pricingService.CalculateExtensionPriceAsync(booking, request.NewEndAt);
+            if (booking.IsOverdue) amount += _pricingService.CalculateOverdueFee(booking, policy);
+
+            var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + new Random().Next(1000, 9999).ToString());
+            var payment = new Payment
+            {
+                BookingId = booking.Id,
+                Kind = PaymentKind.EXTENSION,
+                Status = PaymentStatus.PENDING,
+                Amount = amount,
+                OrderCode = orderCode.ToString(),
+                Gateway = "PAYOS",
+                WebhookPayload = $"{{\"NewEndAt\":\"{request.NewEndAt:O}\"}}"
+            };
+            _context.Payments.Add(payment);
+            await _context.SaveChangesAsync();
+
+            var (checkoutUrl, paymentLinkId) = await _paymentGateway.CreatePaymentLinkAsync(
+                orderCode, (int)amount, $"Gia han {booking.BookingCode}", "", "");
+
+            payment.PaymentLink = checkoutUrl;
+            payment.GatewayTxnId = paymentLinkId;
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
+            {
+                BookingId = booking.Id,
+                BookingCode = booking.BookingCode,
+                Amount = amount,
+                PaymentUrl = checkoutUrl
+            }, "Tạo link thanh toán gia hạn thành công.");
+        }
+        finally
         {
-            BookingId = booking.Id,
-            BookingCode = booking.BookingCode,
-            Amount = amount,
-            PaymentUrl = checkoutUrl
-        }, "Tạo link thanh toán gia hạn thành công.");
+            semaphore.Release();
+        }
     }
 
     /// <summary>
@@ -353,47 +395,85 @@ public class BookingService : IBookingService
 
     /// <summary>
     /// UC-T09: Thanh toán phụ phí quá hạn
+    /// Bảo vệ chống concurrency double-click (TC_BKO_20) bằng SemaphoreSlim lock & Idempotency check.
     /// </summary>
     public async Task<ApiResponse<CreateBookingResponse>> PayOverdueFeeAsync(Guid userId, Guid bookingId)
     {
-        var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == bookingId);
-        if (booking == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không tìm thấy đặt tủ.");
-        if (booking.UserId != userId) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có quyền.");
-        if (booking.Status != BookingStatus.STORED || !booking.IsOverdue)
-            return ApiResponse<CreateBookingResponse>.ErrorResponse("Đặt tủ không có phí quá hạn.");
-
-        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
-        if (policy == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá.");
-
-        var amount = _pricingService.CalculateOverdueFee(booking, policy);
-
-        var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + new Random().Next(1000, 9999).ToString());
-        var payment = new Payment
+        var semaphore = _bookingLocks.GetOrAdd(bookingId, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync();
+        try
         {
-            BookingId = booking.Id,
-            Kind = PaymentKind.OVERDUE,
-            Status = PaymentStatus.PENDING,
-            Amount = amount,
-            OrderCode = orderCode.ToString(),
-            Gateway = "PAYOS"
-        };
-        _context.Payments.Add(payment);
-        await _context.SaveChangesAsync();
+            var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == bookingId);
+            if (booking == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không tìm thấy đặt tủ.");
+            if (booking.UserId != userId) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có quyền.");
+            if (booking.Status != BookingStatus.STORED || !booking.IsOverdue)
+                return ApiResponse<CreateBookingResponse>.ErrorResponse("Đặt tủ không có phí quá hạn.");
 
-        var (checkoutUrl, paymentLinkId) = await _paymentGateway.CreatePaymentLinkAsync(
-            orderCode, (int)amount, $"Qua han {booking.BookingCode}", "", "");
+            var existingPendingPayment = await _context.Payments
+                .Where(p => p.BookingId == booking.Id 
+                         && p.Kind == PaymentKind.OVERDUE 
+                         && p.Status == PaymentStatus.PENDING)
+                .OrderByDescending(p => p.CreatedAt)
+                .FirstOrDefaultAsync();
 
-        payment.PaymentLink = checkoutUrl;
-        payment.GatewayTxnId = paymentLinkId;
-        await _context.SaveChangesAsync();
+            if (existingPendingPayment != null)
+            {
+                if (existingPendingPayment.CreatedAt >= DateTime.UtcNow.AddMinutes(-15) && !string.IsNullOrEmpty(existingPendingPayment.PaymentLink))
+                {
+                    _logger.LogInformation("TC_BKO_20: Reusing existing pending overdue payment for booking {BookingId}, orderCode {OrderCode}", 
+                        booking.Id, existingPendingPayment.OrderCode);
+                    return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
+                    {
+                        BookingId = booking.Id,
+                        BookingCode = booking.BookingCode,
+                        Amount = existingPendingPayment.Amount,
+                        PaymentUrl = existingPendingPayment.PaymentLink
+                    }, "Đã có yêu cầu thanh toán phụ phí đang chờ xử lý. Đang chuyển hướng...");
+                }
+                else
+                {
+                    existingPendingPayment.Status = PaymentStatus.EXPIRED;
+                    await _context.SaveChangesAsync();
+                }
+            }
 
-        return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
+            var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+            if (policy == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá.");
+
+            var amount = _pricingService.CalculateOverdueFee(booking, policy);
+
+            var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + new Random().Next(1000, 9999).ToString());
+            var payment = new Payment
+            {
+                BookingId = booking.Id,
+                Kind = PaymentKind.OVERDUE,
+                Status = PaymentStatus.PENDING,
+                Amount = amount,
+                OrderCode = orderCode.ToString(),
+                Gateway = "PAYOS"
+            };
+            _context.Payments.Add(payment);
+            await _context.SaveChangesAsync();
+
+            var (checkoutUrl, paymentLinkId) = await _paymentGateway.CreatePaymentLinkAsync(
+                orderCode, (int)amount, $"Qua han {booking.BookingCode}", "", "");
+
+            payment.PaymentLink = checkoutUrl;
+            payment.GatewayTxnId = paymentLinkId;
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
+            {
+                BookingId = booking.Id,
+                BookingCode = booking.BookingCode,
+                Amount = amount,
+                PaymentUrl = checkoutUrl
+            }, "Tạo link thanh toán phụ phí quá hạn thành công.");
+        }
+        finally
         {
-            BookingId = booking.Id,
-            BookingCode = booking.BookingCode,
-            Amount = amount,
-            PaymentUrl = checkoutUrl
-        }, "Tạo link thanh toán phụ phí quá hạn thành công.");
+            semaphore.Release();
+        }
     }
 
     /// <summary>
