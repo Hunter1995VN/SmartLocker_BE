@@ -40,5 +40,6 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         modelBuilder.Entity<MaintenanceTicket>().ToTable(tb => tb.HasTrigger("trg_MaintenanceTickets_UpdatedAt"));
         modelBuilder.Entity<AbandonedPropertyRecord>().ToTable(tb => tb.HasTrigger("trg_AbandonedProperty_UpdatedAt"));
         modelBuilder.Entity<IoTDevice>().ToTable(tb => tb.HasTrigger("trg_IoTDevices_UpdatedAt"));
+        modelBuilder.Entity<OtpCode>().ToTable(tb => tb.HasTrigger("trg_OtpCodes_UpdatedAt"));
     }
 }
