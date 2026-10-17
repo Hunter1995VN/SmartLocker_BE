@@ -19,4 +19,9 @@ public interface IPaymentService
     /// Lấy chi tiết payment theo ID
     /// </summary>
     Task<ApiResponse<PaymentDto>> GetPaymentByIdAsync(Guid paymentId);
+
+    /// <summary>
+    /// Chủ động đồng bộ và đối soát trạng thái thanh toán từ PayOS
+    /// </summary>
+    Task<ApiResponse<PaymentResultDto>> SyncPaymentStatusAsync(long orderCode);
 }

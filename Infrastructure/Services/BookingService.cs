@@ -16,14 +16,16 @@ public class BookingService : IBookingService
     private readonly ISmartLockerDbContext _context;
     private readonly IPricingService _pricingService;
     private readonly IPaymentGatewayService _paymentGateway;
+    private readonly IPaymentService _paymentService;
     private readonly ILogger<BookingService> _logger;
 
     public BookingService(ISmartLockerDbContext context, IPricingService pricingService,
-        IPaymentGatewayService paymentGateway, ILogger<BookingService> logger)
+        IPaymentGatewayService paymentGateway, IPaymentService paymentService, ILogger<BookingService> logger)
     {
         _context = context;
         _pricingService = pricingService;
         _paymentGateway = paymentGateway;
+        _paymentService = paymentService;
         _logger = logger;
     }
 
@@ -143,7 +145,8 @@ public class BookingService : IBookingService
                     QrCode = paymentResult.QrCode,
                     AccountNumber = paymentResult.AccountNumber,
                     AccountName = paymentResult.AccountName,
-                    Bin = paymentResult.Bin
+                    Bin = paymentResult.Bin,
+                    OrderCode = orderCode
                 }, "Tạo đặt tủ thành công. Vui lòng thanh toán trong 10 phút.");
             }
             catch (Exception ex)
@@ -157,6 +160,7 @@ public class BookingService : IBookingService
 
     /// <summary>
     /// UC-T05: Xem chi tiết booking
+    /// Tự động đối soát trực tiếp với PayOS nếu đơn hàng đang ở trạng thái PENDING_PAYMENT
     /// </summary>
     public async Task<ApiResponse<BookingDto>> GetBookingByIdAsync(Guid userId, Guid bookingId)
     {
@@ -169,6 +173,33 @@ public class BookingService : IBookingService
 
         if (booking == null) return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy đặt tủ.");
         if (booking.UserId != userId) return ApiResponse<BookingDto>.ErrorResponse("Không có quyền truy cập.");
+
+        // Tự động đối soát với PayOS nếu đơn hàng vẫn đang ở trạng thái PENDING_PAYMENT
+        if (booking.Status == BookingStatus.PENDING_PAYMENT)
+        {
+            var pendingPayment = booking.Payments
+                .FirstOrDefault(p => p.Status == PaymentStatus.PENDING && p.Kind == PaymentKind.BASE);
+
+            if (pendingPayment != null && long.TryParse(pendingPayment.OrderCode, out var orderCode))
+            {
+                var payosStatus = await _paymentGateway.GetPaymentStatusAsync(orderCode);
+                _logger.LogInformation("GetBookingByIdAsync: Checking PayOS status for booking {BookingCode}, orderCode {OrderCode}. Status: {PayOSStatus}", 
+                    booking.BookingCode, orderCode, payosStatus);
+
+                if (string.Equals(payosStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _paymentService.SyncPaymentStatusAsync(orderCode);
+
+                    // Reload booking đã được cập nhật thành CONFIRMED cùng AccessCredential
+                    booking = await _context.Bookings
+                        .Include(b => b.Station)
+                        .Include(b => b.Locker)
+                        .Include(b => b.Payments)
+                        .Include(b => b.AccessCredential)
+                        .FirstOrDefaultAsync(b => b.Id == bookingId) ?? booking;
+                }
+            }
+        }
 
         var dto = MapToBookingDto(booking);
 
