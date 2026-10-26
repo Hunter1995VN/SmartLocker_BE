@@ -17,6 +17,8 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
         services.Configure<Infrastructure.Mqtt.MqttOptions>(config.GetSection("Mqtt"));
+        services.AddSingleton<IMqttPublishService, Infrastructure.Mqtt.MqttPublishService>();
+        services.AddScoped<IKioskService, KioskService>();
         services.AddScoped<Infrastructure.Mqtt.DoorEventHandler>();
         services.AddHostedService<Infrastructure.Mqtt.MqttSubscriberService>();
 

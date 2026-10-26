@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Application.Interfaces;
+using Domain.Entities;
+using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -8,7 +10,10 @@ namespace Infrastructure.Mqtt;
 public sealed record DoorEvent(int SchemaVersion, Guid EventId, string DeviceCode,
     Guid LockerId, string DoorState, DateTimeOffset OccurredAt);
 
-public sealed class DoorEventHandler(ISmartLockerDbContext db, ILogger<DoorEventHandler> logger)
+public sealed class DoorEventHandler(
+    ISmartLockerDbContext db, 
+    ILockerNotificationService notificationService,
+    ILogger<DoorEventHandler> logger)
 {
     public static DoorEvent Parse(string topic, string payload, DateTimeOffset now)
     {
@@ -39,21 +44,74 @@ public sealed class DoorEventHandler(ISmartLockerDbContext db, ILogger<DoorEvent
         }
 
         var timestamp = message.OccurredAt.UtcDateTime;
-        // One conditional UPDATE makes mapping and timestamp checks atomic. Duplicate
-        // or older events cannot overwrite a newer state, even with concurrent clients.
-        var updated = await db.Lockers
-            .Where(l => l.Id == message.LockerId
+        
+        // Find locker to update and notify
+        var locker = await db.Lockers
+            .Include(l => l.Bookings)
+            .FirstOrDefaultAsync(l => l.Id == message.LockerId
                 && db.IoTDevices.Any(d => d.Id == l.IoTDeviceId
-                    && d.DeviceCode == message.DeviceCode && d.StationId == l.StationId)
-                && (l.LastDoorEventAt == null || l.LastDoorEventAt < timestamp))
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(l => l.DoorState, message.DoorState)
-                .SetProperty(l => l.LastDoorEventAt, timestamp)
-                .SetProperty(l => l.UpdatedAt, DateTime.UtcNow), ct);
-        if (updated == 1)
-            logger.LogInformation("MQTT door updated: locker {LockerId} -> {DoorState}; event {EventId}",
-                message.LockerId, message.DoorState, message.EventId);
-        else
-            logger.LogWarning("MQTT door ignored: unknown/mismatched locker or stale event {EventId}.", message.EventId);
+                    && d.DeviceCode == message.DeviceCode && d.StationId == l.StationId), ct);
+
+        if (locker == null)
+        {
+            logger.LogWarning("MQTT door ignored: unknown/mismatched locker or device {DeviceCode}.", message.DeviceCode);
+            return;
+        }
+
+        if (locker.LastDoorEventAt != null && locker.LastDoorEventAt >= timestamp)
+        {
+            logger.LogWarning("MQTT door ignored: stale event timestamp {Timestamp} <= {LastSeen}", timestamp, locker.LastDoorEventAt);
+            return;
+        }
+
+        locker.DoorState = message.DoorState;
+        locker.LastDoorEventAt = timestamp;
+        locker.UpdatedAt = DateTime.UtcNow;
+
+        // Auto transition active booking on door close
+        var activeBooking = locker.Bookings
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefault(b => b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED);
+
+        if (activeBooking != null)
+        {
+            if (message.DoorState == "CLOSED")
+            {
+                if (activeBooking.Status == BookingStatus.CONFIRMED && activeBooking.CheckedInAt != null)
+                {
+                    // Luggage deposited and door shut -> Transition to STORED
+                    activeBooking.Status = BookingStatus.STORED;
+                    locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
+                    logger.LogInformation("Booking {BookingCode} transitioned to STORED upon door close.", activeBooking.BookingCode);
+                }
+                else if (activeBooking.Status == BookingStatus.STORED && activeBooking.CheckedOutAt != null)
+                {
+                    // Luggage retrieved and door shut -> Transition to COMPLETED & free locker
+                    activeBooking.Status = BookingStatus.COMPLETED;
+                    locker.BusinessStatus = LockerBusinessStatus.AVAILABLE;
+                    logger.LogInformation("Booking {BookingCode} transitioned to COMPLETED upon door close.", activeBooking.BookingCode);
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("MQTT door updated: locker {LockerCode} ({LockerId}) -> {DoorState}; event {EventId}",
+            locker.LockerCode, message.LockerId, message.DoorState, message.EventId);
+
+        // Notify Kiosk and Admin UI via SignalR
+        try
+        {
+            await notificationService.NotifyDoorStatusChangedAsync(
+                locker.StationId,
+                locker.Id,
+                locker.LockerCode,
+                message.DoorState,
+                message.OccurredAt);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to broadcast door event to SignalR clients.");
+        }
     }
 }
