@@ -116,8 +116,8 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void telemetryTask(void*) {
-  if (!strcmp(WIFI_SSID, "YOUR_WIFI_NAME") || !strcmp(MQTT_PASSWORD, "YOUR_MQTT_PASSWORD")) {
-    Serial.println("MQTT: Fill in iot_config.h with your Wi-Fi & MQTT credentials.");
+  if (!strcmp(WIFI_SSID, "YOUR_WIFI_NAME")) {
+    Serial.println("MQTT: Fill in iot_config.h with your Wi-Fi SSID.");
     vTaskDelete(nullptr);
     return;
   }
@@ -185,7 +185,14 @@ void telemetryTask(void*) {
       if (now - lastMqttAttempt >= 5000) {
         lastMqttAttempt = now;
         Serial.printf("MQTT: Connecting to %s:%d...\n", MQTT_HOST, MQTT_PORT);
-        if (mqtt.connect(clientId, MQTT_USERNAME, MQTT_PASSWORD)) {
+        bool ok = false;
+        if (strlen(MQTT_USERNAME) > 0 && strlen(MQTT_PASSWORD) > 0 && strcmp(MQTT_USERNAME, "none") != 0) {
+          ok = mqtt.connect(clientId, MQTT_USERNAME, MQTT_PASSWORD);
+        }
+        if (!ok) {
+          ok = mqtt.connect(clientId);
+        }
+        if (ok) {
           Serial.println("MQTT: Connected! Subscribing to command topic...");
           mqtt.subscribe(cmdTopic, 1);
           Serial.printf("MQTT: Subscribed to '%s'\n", cmdTopic);
