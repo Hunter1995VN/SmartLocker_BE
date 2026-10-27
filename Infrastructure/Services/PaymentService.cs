@@ -134,6 +134,68 @@ public class PaymentService : IPaymentService
         });
     }
 
+    /// <summary>
+    /// Chủ động đối soát trực tiếp với PayOS và cập nhật DB nếu đã thanh toán
+    /// </summary>
+    public async Task<ApiResponse<PaymentResultDto>> SyncPaymentStatusAsync(long orderCode)
+    {
+        var payment = await _context.Payments
+            .Include(p => p.Booking)
+            .FirstOrDefaultAsync(p => p.OrderCode == orderCode.ToString());
+
+        if (payment == null)
+            return ApiResponse<PaymentResultDto>.ErrorResponse($"Không tìm thấy giao dịch OrderCode={orderCode}.");
+
+        if (payment.Status == PaymentStatus.PAID)
+        {
+            return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
+            {
+                PaymentId = payment.Id,
+                BookingId = payment.BookingId,
+                BookingCode = payment.Booking?.BookingCode,
+                OrderCode = payment.OrderCode,
+                Amount = payment.Amount,
+                Status = payment.Status.ToString(),
+                IsSuccess = true,
+                Message = "Giao dịch đã được thanh toán thành công."
+            });
+        }
+
+        // Gọi trực tiếp PayOS API để đối soát trạng thái thực tế
+        var payosStatus = await _paymentGateway.GetPaymentStatusAsync(orderCode);
+        _logger.LogInformation("SyncPaymentStatusAsync for OrderCode={OrderCode}: PayOS status={Status}", orderCode, payosStatus);
+
+        if (string.Equals(payosStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+        {
+            await ProcessSuccessfulPaymentAsync(payment);
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
+            {
+                PaymentId = payment.Id,
+                BookingId = payment.BookingId,
+                BookingCode = payment.Booking?.BookingCode,
+                OrderCode = payment.OrderCode,
+                Amount = payment.Amount,
+                Status = payment.Status.ToString(),
+                IsSuccess = true,
+                Message = "Xác nhận thanh toán thành công từ cổng PayOS!"
+            });
+        }
+
+        return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
+        {
+            PaymentId = payment.Id,
+            BookingId = payment.BookingId,
+            BookingCode = payment.Booking?.BookingCode,
+            OrderCode = payment.OrderCode,
+            Amount = payment.Amount,
+            Status = payment.Status.ToString(),
+            IsSuccess = false,
+            Message = $"Giao dịch đang ở trạng thái {payosStatus ?? "PENDING"} trên cổng PayOS."
+        });
+    }
+
     // === Private ===
 
     private async Task ProcessSuccessfulPaymentAsync(Payment payment)

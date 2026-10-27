@@ -29,16 +29,28 @@ public class PaymentsController : ControllerBase
 
     /// <summary>
     /// PayOS Return URL callback (browser redirect) — user quay về sau khi thanh toán
+    /// Tự động đối soát và kích hoạt đơn đặt tủ ngay lập tức
     /// </summary>
     [HttpGet("payos-return")]
     public async Task<IActionResult> PayOSReturn(
         [FromQuery] long orderCode,
         [FromQuery] string status = "")
     {
-        var result = await _paymentService.ProcessPayOSReturnAsync(orderCode, status);
+        var result = await _paymentService.SyncPaymentStatusAsync(orderCode);
+        return Ok(result);
+    }
 
-        // Trong production sẽ redirect tới frontend:
-        // return Redirect($"http://localhost:5173/payment/result?bookingId={result.Data?.BookingId}&status={result.Data?.Status}");
+    /// <summary>
+    /// Chủ động đối soát & đồng bộ trạng thái thanh toán từ PayOS
+    /// </summary>
+    [HttpPost("sync/{orderCode:long}")]
+    [HttpGet("sync/{orderCode:long}")]
+    public async Task<IActionResult> SyncPayment(long orderCode)
+    {
+        var result = await _paymentService.SyncPaymentStatusAsync(orderCode);
+        if (!result.Success)
+            return BadRequest(result);
+
         return Ok(result);
     }
 

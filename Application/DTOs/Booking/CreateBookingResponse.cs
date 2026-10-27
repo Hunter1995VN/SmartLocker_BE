@@ -11,4 +11,5 @@ public class CreateBookingResponse
     public string? AccountNumber { get; set; }
     public string? AccountName { get; set; }
     public string? Bin { get; set; }
+    public long OrderCode { get; set; }
 }

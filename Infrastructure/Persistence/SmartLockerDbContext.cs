@@ -34,8 +34,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng Users ===
         modelBuilder.Entity<User>(entity =>
         {
-            // Users has database triggers; SQL Server rejects OUTPUT without INTO on this table.
-            entity.ToTable("Users", table => table.UseSqlOutputClause(false));
+            entity.ToTable("Users", t => t.HasTrigger("trg_Users_UpdatedAt"));
             entity.HasKey(u => u.Id);
             entity.Property(u => u.Id).HasDefaultValueSql("newsequentialid()");
 
@@ -68,7 +67,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         // === Ánh xạ bảng OtpCodes ===
         modelBuilder.Entity<OtpCode>(entity =>
         {
-            entity.ToTable("OtpCodes");
+            entity.ToTable("OtpCodes", t => t.HasTrigger("trg_OtpCodes_UpdatedAt"));
             entity.HasKey(o => o.Id);
             entity.Property(o => o.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(o => o.Recipient).IsRequired().HasMaxLength(255);
