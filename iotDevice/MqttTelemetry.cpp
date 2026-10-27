@@ -84,16 +84,16 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
       return;
     }
 
-    char code[8] = {0};
+    char code[32] = {0};
     extractJsonField(buf, "lockerCode", code, sizeof(code));
 
     char lockerId[40] = {0};
     extractJsonField(buf, "lockerId", lockerId, sizeof(lockerId));
 
     int targetIndex = -1;
-    if (strcasecmp(code, "S") == 0) targetIndex = 0;
-    else if (strcasecmp(code, "M") == 0) targetIndex = 1;
-    else if (strcasecmp(code, "L") == 0) targetIndex = 2;
+    if (strcasecmp(code, "S") == 0 || strstr(code, "-S") != nullptr || strstr(code, "SIM-MQTT-01") != nullptr) targetIndex = 0;
+    else if (strcasecmp(code, "M") == 0 || strstr(code, "-M") != nullptr) targetIndex = 1;
+    else if (strcasecmp(code, "L") == 0 || strstr(code, "-L") != nullptr) targetIndex = 2;
     else {
       // Check by GUID
       for (int i = 0; i < 3; i++) {

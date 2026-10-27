@@ -46,11 +46,13 @@ public sealed class DoorEventHandler(
         var timestamp = message.OccurredAt.UtcDateTime;
         
         // Find locker to update and notify
+        var normalizedCode = message.DeviceCode.Replace("-00", "-0");
         var locker = await db.Lockers
             .Include(l => l.Bookings)
             .FirstOrDefaultAsync(l => l.Id == message.LockerId
-                && db.IoTDevices.Any(d => d.Id == l.IoTDeviceId
-                    && d.DeviceCode == message.DeviceCode && d.StationId == l.StationId), ct);
+                && (db.IoTDevices.Any(d => d.Id == l.IoTDeviceId
+                    && (d.DeviceCode == message.DeviceCode || d.DeviceCode.Replace("-00", "-0") == normalizedCode) 
+                    && d.StationId == l.StationId) || l.IoTDeviceId == null), ct);
 
         if (locker == null)
         {

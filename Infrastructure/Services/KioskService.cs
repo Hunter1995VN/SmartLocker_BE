@@ -140,8 +140,20 @@ public class KioskService : IKioskService
         if (booking.BookingCode == "BK-TEST-CHECKIN")
         {
             booking.Status = BookingStatus.CONFIRMED;
-            booking.LockerId = null;
-            booking.Locker = null;
+            booking.StationId = request.StationId;
+            var iotLocker = await _context.Lockers
+                .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
+            if (iotLocker != null)
+            {
+                booking.LockerId = iotLocker.Id;
+                booking.Locker = iotLocker;
+                iotLocker.BusinessStatus = LockerBusinessStatus.RESERVED;
+            }
+            else
+            {
+                booking.LockerId = null;
+                booking.Locker = null;
+            }
             booking.CheckedInAt = null;
             booking.StartAt = DateTime.UtcNow;
             booking.EndAt = DateTime.UtcNow.AddHours(4);
@@ -159,13 +171,24 @@ public class KioskService : IKioskService
         Locker? assignedLocker = booking.Locker;
         if (assignedLocker == null)
         {
+            // Ưu tiên ô tủ có gắn thiết bị IoT thực tế
             assignedLocker = await _context.Lockers
                 .Where(l => l.StationId == request.StationId &&
                             l.Size == booking.Size &&
-                            l.BusinessStatus == LockerBusinessStatus.AVAILABLE &&
+                            l.IoTDeviceId != null &&
                             l.HealthStatus == LockerHealthStatus.HEALTHY)
-                .OrderBy(l => l.LockerCode)
                 .FirstOrDefaultAsync();
+
+            if (assignedLocker == null)
+            {
+                assignedLocker = await _context.Lockers
+                    .Where(l => l.StationId == request.StationId &&
+                                l.Size == booking.Size &&
+                                l.BusinessStatus == LockerBusinessStatus.AVAILABLE &&
+                                l.HealthStatus == LockerHealthStatus.HEALTHY)
+                    .OrderBy(l => l.LockerCode)
+                    .FirstOrDefaultAsync();
+            }
 
             if (assignedLocker == null)
                 return ApiResponse<KioskCheckInResponse>.ErrorResponse($"Hiện trạm không còn ô tủ cỡ {booking.Size} khả dụng.");
@@ -180,13 +203,13 @@ public class KioskService : IKioskService
         // Find device code to send command
         var iotDevice = await _context.IoTDevices
             .FirstOrDefaultAsync(d => d.Id == assignedLocker.IoTDeviceId || d.StationId == request.StationId);
-        var deviceCode = iotDevice?.DeviceCode ?? "SIM-MQTT-01";
+        var deviceCode = iotDevice?.DeviceCode ?? "SIM-MQTT-001";
 
         // Save state
         await _context.SaveChangesAsync();
 
         // Dispatch MQTT Unlock command
-        await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, assignedLocker.Id, assignedLocker.LockerCode);
+        await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, assignedLocker.Id, assignedLocker.Size.ToString());
 
         // Dispatch SignalR
         await _notificationService.NotifyLockerUnlockedAsync(request.StationId, assignedLocker.Id, assignedLocker.LockerCode);
@@ -246,6 +269,15 @@ public class KioskService : IKioskService
         if (booking.BookingCode == "BK-TEST-CHECKOUT")
         {
             booking.Status = BookingStatus.STORED;
+            booking.StationId = request.StationId;
+            var iotLocker = await _context.Lockers
+                .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
+            if (iotLocker != null)
+            {
+                booking.LockerId = iotLocker.Id;
+                booking.Locker = iotLocker;
+                iotLocker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
+            }
             booking.CheckedOutAt = null;
             booking.StartAt = DateTime.UtcNow.AddHours(-2);
             booking.EndAt = DateTime.UtcNow.AddHours(2);
@@ -294,12 +326,12 @@ public class KioskService : IKioskService
         // Find device
         var iotDevice = await _context.IoTDevices
             .FirstOrDefaultAsync(d => d.Id == locker.IoTDeviceId || d.StationId == request.StationId);
-        var deviceCode = iotDevice?.DeviceCode ?? "SIM-MQTT-01";
+        var deviceCode = iotDevice?.DeviceCode ?? "SIM-MQTT-001";
 
         await _context.SaveChangesAsync();
 
         // Dispatch MQTT Unlock command
-        await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, locker.Id, locker.LockerCode);
+        await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, locker.Id, locker.Size.ToString());
 
         // Dispatch SignalR
         await _notificationService.NotifyLockerUnlockedAsync(request.StationId, locker.Id, locker.LockerCode);
