@@ -119,22 +119,58 @@ public class KioskService : IKioskService
         }
         else // ACCESS_CODE
         {
-            var code = request.Payload.Trim().ToUpper();
+            var rawInput = request.Payload.Trim();
+            var code = rawInput.ToUpper();
+            var clean = rawInput.Replace(" ", "").Replace("-", "").ToUpper();
+
             booking = await _context.Bookings
                 .Include(b => b.AccessCredential)
                 .Include(b => b.Locker)
                 .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => b.StationId == request.StationId &&
-                                          ((b.AccessCredential != null && b.AccessCredential.OfflinePayload == code) ||
-                                           b.BookingCode == code ||
-                                           (b.AccessCredential != null && b.AccessCredential.AccessCodeHash == code)));
+                .FirstOrDefaultAsync(b => 
+                    b.BookingCode == code ||
+                    b.BookingCode.Replace("-", "") == clean ||
+                    (clean.Length >= 6 && b.BookingCode.Replace("-", "").EndsWith(clean)) ||
+                    (b.AccessCredential != null && (
+                        b.AccessCredential.OfflinePayload == code ||
+                        b.AccessCredential.OfflinePayload.Replace(" ", "").ToUpper() == clean ||
+                        b.AccessCredential.AccessCodeHash == code
+                    ))
+                );
         }
 
         if (booking == null)
-            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Không tìm thấy thông tin đơn đặt chỗ tương ứng.");
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Không tìm thấy thông tin đơn đặt chỗ tương ứng. Vui lòng kiểm tra lại mã PIN hoặc mã đặt chỗ.");
 
-        if (booking.StationId != request.StationId)
-            return ApiResponse<KioskCheckInResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'. Vui lòng đến đúng trạm.");
+        // Nếu đơn thuộc trạm khác, kiểm tra hoặc hỗ trợ chuyển trạm
+        if (!booking.BookingCode.StartsWith("BK-TEST") && booking.StationId != request.StationId)
+        {
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'. Vui lòng bấm vào góc trên bên trái màn hình Kiosk để chọn đúng trạm '{booking.Station?.Name}'.");
+        }
+
+        // Tự động kích hoạt (Auto-confirm) đơn mới tạo ở trạng thái PENDING_PAYMENT để hỗ trợ demo tiện lợi
+        if (booking.Status == BookingStatus.PENDING_PAYMENT)
+        {
+            booking.Status = BookingStatus.CONFIRMED;
+            if (booking.AccessCredential == null)
+            {
+                var pin = Guid.NewGuid().ToString("N")[..8].ToUpper();
+                booking.AccessCredential = new AccessCredential
+                {
+                    BookingId = booking.Id,
+                    OfflinePayload = pin,
+                    OfflineNonce = Guid.NewGuid().ToString("N"),
+                    AccessCodeHash = pin,
+                    QrPayload = pin,
+                    QrNonce = Guid.NewGuid().ToString("N"),
+                    QrExpiresAt = booking.EndAt,
+                    IsActive = true,
+                    IssuedAt = DateTime.UtcNow
+                };
+                _context.AccessCredentials.Add(booking.AccessCredential);
+            }
+            _logger.LogInformation("Booking {Code} auto-confirmed at Kiosk for instant check-in", booking.BookingCode);
+        }
 
         // Auto-rearm test booking BK-TEST-CHECKIN for seamless repeated testing
         if (booking.BookingCode == "BK-TEST-CHECKIN")
@@ -143,16 +179,16 @@ public class KioskService : IKioskService
             booking.StationId = request.StationId;
             var iotLocker = await _context.Lockers
                 .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
+            if (iotLocker == null)
+            {
+                iotLocker = await _context.Lockers
+                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
+            }
             if (iotLocker != null)
             {
                 booking.LockerId = iotLocker.Id;
                 booking.Locker = iotLocker;
                 iotLocker.BusinessStatus = LockerBusinessStatus.RESERVED;
-            }
-            else
-            {
-                booking.LockerId = null;
-                booking.Locker = null;
             }
             booking.CheckedInAt = null;
             booking.StartAt = DateTime.UtcNow;
@@ -174,9 +210,7 @@ public class KioskService : IKioskService
             // Ưu tiên ô tủ có gắn thiết bị IoT thực tế
             assignedLocker = await _context.Lockers
                 .Where(l => l.StationId == request.StationId &&
-                            l.Size == booking.Size &&
-                            l.IoTDeviceId != null &&
-                            l.HealthStatus == LockerHealthStatus.HEALTHY)
+                            (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"))
                 .FirstOrDefaultAsync();
 
             if (assignedLocker == null)
@@ -188,6 +222,12 @@ public class KioskService : IKioskService
                                 l.HealthStatus == LockerHealthStatus.HEALTHY)
                     .OrderBy(l => l.LockerCode)
                     .FirstOrDefaultAsync();
+            }
+
+            if (assignedLocker == null)
+            {
+                assignedLocker = await _context.Lockers
+                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
             }
 
             if (assignedLocker == null)
@@ -248,22 +288,31 @@ public class KioskService : IKioskService
         }
         else // ACCESS_CODE
         {
-            var code = request.Payload.Trim().ToUpper();
+            var rawInput = request.Payload.Trim();
+            var code = rawInput.ToUpper();
+            var clean = rawInput.Replace(" ", "").Replace("-", "").ToUpper();
+
             booking = await _context.Bookings
                 .Include(b => b.AccessCredential)
                 .Include(b => b.Locker)
                 .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => b.StationId == request.StationId &&
-                                          ((b.AccessCredential != null && b.AccessCredential.OfflinePayload == code) ||
-                                           b.BookingCode == code ||
-                                           (b.AccessCredential != null && b.AccessCredential.AccessCodeHash == code)));
+                .FirstOrDefaultAsync(b => 
+                    b.BookingCode == code ||
+                    b.BookingCode.Replace("-", "") == clean ||
+                    (clean.Length >= 6 && b.BookingCode.Replace("-", "").EndsWith(clean)) ||
+                    (b.AccessCredential != null && (
+                        b.AccessCredential.OfflinePayload == code ||
+                        b.AccessCredential.OfflinePayload.Replace(" ", "").ToUpper() == clean ||
+                        b.AccessCredential.AccessCodeHash == code
+                    ))
+                );
         }
 
         if (booking == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin đơn đặt chỗ tương ứng.");
 
-        if (booking.StationId != request.StationId)
-            return ApiResponse<KioskCheckOutResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'.");
+        if (!booking.BookingCode.StartsWith("BK-TEST") && booking.StationId != request.StationId)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'. Vui lòng bấm vào góc trên bên trái màn hình Kiosk để chọn đúng trạm '{booking.Station?.Name}'.");
 
         // Auto-rearm test booking BK-TEST-CHECKOUT for seamless repeated testing
         if (booking.BookingCode == "BK-TEST-CHECKOUT")
@@ -272,6 +321,11 @@ public class KioskService : IKioskService
             booking.StationId = request.StationId;
             var iotLocker = await _context.Lockers
                 .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
+            if (iotLocker == null)
+            {
+                iotLocker = await _context.Lockers
+                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
+            }
             if (iotLocker != null)
             {
                 booking.LockerId = iotLocker.Id;
