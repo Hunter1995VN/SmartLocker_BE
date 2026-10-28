@@ -76,8 +76,8 @@ public class BookingExpirationJob : BackgroundService
 
                                 booking.Status = BookingStatus.CONFIRMED;
 
-                                // Sinh mã PIN mở tủ 8 ký tự và mã QR
-                                var randomCode = Guid.NewGuid().ToString("N")[..8].ToUpper();
+                                // Sinh mã PIN mở tủ 6 số và mã QR
+                                var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
                                 using var sha256 = SHA256.Create();
                                 var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
                                 var hashString = Convert.ToBase64String(hashBytes);
@@ -86,6 +86,9 @@ public class BookingExpirationJob : BackgroundService
                                     JsonSerializer.Serialize(new
                                     {
                                         bookingId = booking.Id,
+                                        bookingCode = booking.BookingCode,
+                                        stationId = booking.StationId,
+                                        accessCode = randomCode,
                                         nonce = Guid.NewGuid().ToString("N"),
                                         expiresAt = booking.EndAt
                                     })));
@@ -97,6 +100,7 @@ public class BookingExpirationJob : BackgroundService
                                     QrNonce = Guid.NewGuid().ToString("N"),
                                     QrExpiresAt = booking.EndAt,
                                     AccessCodeHash = hashString,
+                                    OfflinePayload = randomCode,
                                     IsActive = true,
                                     IssuedAt = DateTime.UtcNow
                                 });

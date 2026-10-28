@@ -209,7 +209,8 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.Status = BookingStatus.CONFIRMED;
 
-            var randomCode = Guid.NewGuid().ToString("N")[..8].ToUpper();
+            // Chuẩn hóa mã PIN mở tủ thành 6 chữ số an toàn (100000 - 999999)
+            var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
             using var sha256 = SHA256.Create();
             var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
             var hashString = Convert.ToBase64String(hashBytes);
