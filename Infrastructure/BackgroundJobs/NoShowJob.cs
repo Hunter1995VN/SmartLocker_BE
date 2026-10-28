@@ -34,6 +34,7 @@ public class NoShowJob : BackgroundService
                 var confirmedBookings = await context.Bookings
                     .Include(b => b.PricingPolicy)
                     .Include(b => b.Payments)
+                    .Include(b => b.Locker)
                     .Where(b => b.Status == BookingStatus.CONFIRMED)
                     .ToListAsync(stoppingToken);
 
@@ -52,6 +53,11 @@ public class NoShowJob : BackgroundService
                     {
                         booking.Status = BookingStatus.NO_SHOW;
                         booking.UpdatedAt = now;
+                        if (booking.Locker != null)
+                        {
+                            booking.Locker.BusinessStatus = LockerBusinessStatus.AVAILABLE;
+                            booking.Locker.UpdatedAt = now;
+                        }
                         count++;
                     }
                 }
