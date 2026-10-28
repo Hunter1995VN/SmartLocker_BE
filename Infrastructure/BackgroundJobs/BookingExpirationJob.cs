@@ -101,6 +101,7 @@ public class BookingExpirationJob : BackgroundService
                                     QrExpiresAt = booking.EndAt,
                                     AccessCodeHash = hashString,
                                     OfflinePayload = randomCode,
+                                    OfflineNonce = Guid.NewGuid().ToString("N"),
                                     IsActive = true,
                                     IssuedAt = DateTime.UtcNow
                                 });
