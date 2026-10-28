@@ -121,6 +121,10 @@ builder.Services.AddHostedService<BookingExpirationJob>();
 builder.Services.AddHostedService<NoShowJob>();
 builder.Services.AddHostedService<OverdueCheckJob>();
 
+// === SignalR & Realtime Locker Notifications ===
+builder.Services.AddSignalR();
+builder.Services.AddScoped<ILockerNotificationService, API.Services.LockerNotificationService>();
+
 // ============================================================
 var app = builder.Build();
 
@@ -148,6 +152,7 @@ app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<API.Hubs.LockerHub>("/hubs/locker");
 
 // Health check endpoint
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));

@@ -28,11 +28,20 @@ public class AdminStationLockerService : IAdminStationLockerService
         }
 
         var stations = await query.ToListAsync();
+        var stationIds = stations.Select(s => s.Id).ToList();
+        var policies = await _db.PricingPolicies.AsNoTracking()
+            .Where(p => stationIds.Contains(p.StationId) && p.EffectiveTo == null)
+            .ToListAsync();
+        var lockers = await _db.Lockers.AsNoTracking()
+            .Where(l => stationIds.Contains(l.StationId))
+            .ToListAsync();
         var result = new List<StationAdminDetailDto>();
 
         foreach (var s in stations)
         {
-            var dto = await MapStationToAdminDtoAsync(s);
+            var dto = MapStationToAdminDto(s,
+                policies.Where(p => p.StationId == s.Id).ToList(),
+                lockers.Where(l => l.StationId == s.Id).ToList());
             result.Add(dto);
         }
 
@@ -380,6 +389,12 @@ public class AdminStationLockerService : IAdminStationLockerService
             .Where(l => l.StationId == station.Id)
             .ToListAsync();
 
+        return MapStationToAdminDto(station, policies, lockers);
+    }
+
+    private static StationAdminDetailDto MapStationToAdminDto(
+        Station station, List<PricingPolicy> policies, List<Locker> lockers)
+    {
         return new StationAdminDetailDto
         {
             Id = station.Id,

@@ -4,6 +4,8 @@
 ## Get latest from `dotnet new gitignore`
 
 # dotenv files
+mqtt-local.passwords
+iotDevice/iot_config.h
 .env
 appsettings.Development.json
 appsettings.Production.json
