@@ -97,6 +97,14 @@ public class KioskTests : IDisposable
         booking.Locker = null; booking.LockerId = null; locker.StationId = Guid.NewGuid(); await db.SaveChangesAsync();
         Assert.False((await Service.CheckInAsync(Request())).Success); mqtt.VerifyNoOtherCalls();
     }
+    [Fact] public async Task OverdueCalculationDoesNotDependOnStaleFlag()
+    {
+        booking.Status = BookingStatus.STORED; locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
+        booking.IsOverdue = false; booking.EndAt = DateTime.UtcNow.AddHours(-2); await db.SaveChangesAsync();
+        pricing.Setup(p => p.CalculateOverdueFee(booking, It.IsAny<PricingPolicy>())).Returns(30000);
+        var result = await Service.CheckOutAsync(new() { StationId = booking.StationId, CredentialType = "ACCESS_CODE", Payload = "01234567" });
+        Assert.True(result.Data!.IsOverdue); Assert.Equal(30000, result.Data.OverdueFee); mqtt.VerifyNoOtherCalls();
+    }
     [Fact] public async Task DoorMustOpenAfterCommandBeforeCloseCompletesBooking()
     {
         var handler = new DoorEventHandler(db, notifications.Object, NullLogger<DoorEventHandler>.Instance);

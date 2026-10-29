@@ -147,98 +147,56 @@ public class KioskService : IKioskService
 
     public async Task<ApiResponse<KioskCheckOutResponse>> CheckOutAsync(KioskCheckOutRequest request)
     {
+        await using var transaction = _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
+        var result = await CheckOutCoreAsync(request);
+        if (result.Success && transaction != null) await transaction.CommitAsync();
+        return result;
+    }
+
+    private async Task<ApiResponse<KioskCheckOutResponse>> CheckOutCoreAsync(KioskCheckOutRequest request)
+    {
         if (request.StationId == Guid.Empty || string.IsNullOrWhiteSpace(request.Payload))
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Dữ liệu xác thực không hợp lệ.");
 
-        Booking? booking = null;
-
-        if (request.CredentialType.Equals("QR", StringComparison.OrdinalIgnoreCase))
+        PickupDelegation? delegation = null;
+        var booking = await FindAuthorizedBookingAsync(request.StationId, request.CredentialType, request.Payload.Trim());
+        if (booking == null && request.CredentialType == "ACCESS_CODE" && request.Payload.Length == 8
+            && request.Payload.All(c => c >= '0' && c <= '9'))
         {
-            var parsed = ParseQrPayload(request.Payload);
-            if (parsed == null)
-                return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Mã QR không đúng định dạng.");
-
-            booking = await _context.Bookings
-                .Include(b => b.AccessCredential)
-                .Include(b => b.Locker)
-                .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => (parsed.BookingId.HasValue && b.Id == parsed.BookingId.Value) ||
-                                          (!string.IsNullOrEmpty(parsed.BookingCode) && b.BookingCode == parsed.BookingCode));
-        }
-        else // ACCESS_CODE
-        {
-            var rawInput = request.Payload.Trim();
-            var code = rawInput.ToUpper();
-            var clean = rawInput.Replace(" ", "").Replace("-", "").ToUpper();
-
-            booking = await _context.Bookings
-                .Include(b => b.AccessCredential)
-                .Include(b => b.Locker)
-                .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => 
-                    b.BookingCode == code ||
-                    b.BookingCode.Replace("-", "") == clean ||
-                    (clean.Length >= 6 && b.BookingCode.Replace("-", "").EndsWith(clean)) ||
-                    (b.AccessCredential != null && (
-                        b.AccessCredential.OfflinePayload == code ||
-                        b.AccessCredential.OfflinePayload.Replace(" ", "").ToUpper() == clean ||
-                        b.AccessCredential.AccessCodeHash == code
-                    ))
-                );
+            var hash = OnlineTicket.HashPin(request.Payload);
+            var grants = await _context.PickupDelegations.Include(x => x.Booking).ThenInclude(b => b.Locker)
+                .Include(x => x.Booking).ThenInclude(b => b.Payments)
+                .Where(x => x.Booking.StationId == request.StationId && x.Booking.Status == BookingStatus.STORED
+                    && x.PinHash == hash && x.UsedAt == null && x.RevokedAt == null && x.ExpiresAt > DateTime.UtcNow)
+                .Take(2).ToListAsync();
+            if (grants.Count == 1) { delegation = grants[0]; booking = delegation.Booking; }
         }
 
         if (booking == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin đơn đặt chỗ tương ứng.");
 
-        if (!booking.BookingCode.StartsWith("BK-TEST") && booking.StationId != request.StationId)
-            return ApiResponse<KioskCheckOutResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'. Vui lòng bấm vào góc trên bên trái màn hình Kiosk để chọn đúng trạm '{booking.Station?.Name}'.");
-
-        // Auto-rearm test booking BK-TEST-CHECKOUT for seamless repeated testing
-        if (booking.BookingCode == "BK-TEST-CHECKOUT")
-        {
-            booking.Status = BookingStatus.STORED;
-            booking.StationId = request.StationId;
-            var iotLocker = await _context.Lockers
-                .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
-            if (iotLocker == null)
-            {
-                iotLocker = await _context.Lockers
-                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
-            }
-            if (iotLocker != null)
-            {
-                booking.LockerId = iotLocker.Id;
-                booking.Locker = iotLocker;
-                iotLocker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
-            }
-            booking.CheckedOutAt = null;
-            booking.StartAt = DateTime.UtcNow.AddHours(-2);
-            booking.EndAt = DateTime.UtcNow.AddHours(2);
-            booking.IsOverdue = false;
-        }
-        else if (booking.BookingCode == "BK-TEST-OVERDUE")
-        {
-            booking.Status = BookingStatus.STORED;
-            booking.IsOverdue = true;
-            booking.StartAt = DateTime.UtcNow.AddHours(-6);
-            booking.EndAt = DateTime.UtcNow.AddHours(-2);
-        }
-        else
-        {
-            if (booking.Status == BookingStatus.COMPLETED)
-                return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Đơn đặt này đã hoàn thành lấy đồ từ trước.");
-
-            if (booking.Status != BookingStatus.STORED)
-                return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Hành lý chưa được gửi vào tủ. Vui lòng chọn 'Gửi đồ (Check-in)'.");
-        }
+        if (booking.Status != BookingStatus.STORED)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Chỉ có thể lấy đồ với đơn đang lưu trữ.");
 
         if (booking.Locker == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin ô tủ của đơn đặt.");
 
+        if (booking.Locker.StationId != request.StationId || booking.Locker.BusinessStatus != LockerBusinessStatus.OCCUPIED)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Ô tủ không khớp trạng thái lưu trữ.");
+        if (booking.CheckedOutAt > DateTime.UtcNow.AddSeconds(-30))
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Đang chờ thiết bị phản hồi. Không gửi lại lệnh mở tủ.");
+
         // Check overdue
         var now = DateTime.UtcNow;
-        var graceEnd = booking.EndAt.AddMinutes(15);
-        if (now > graceEnd && booking.IsOverdue)
+        var policy = booking.PricingPolicyId.HasValue
+            ? await _context.PricingPolicies.FindAsync(booking.PricingPolicyId.Value)
+            : await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        if (policy == null)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Chưa có chính sách tính phí cho đơn.");
+        var paidOverdue = booking.Payments.Where(p => p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PAID).Sum(p => p.Amount);
+        var outstanding = Math.Max(0, _pricingService.CalculateOverdueFee(booking, policy) - paidOverdue);
+        if (outstanding > 0)
         {
             return ApiResponse<KioskCheckOutResponse>.SuccessResponse(new KioskCheckOutResponse
             {
@@ -248,29 +206,47 @@ public class KioskService : IKioskService
                 LockerCode = booking.Locker.LockerCode,
                 LockerSize = booking.Locker.Size.ToString(),
                 IsOverdue = true,
-                OverdueFee = 20000, // standard overtime fee or calculated
+                OverdueFee = outstanding,
                 Message = "Đơn của bạn đã quá hạn thuê. Vui lòng thanh toán phụ phí trước khi lấy đồ."
             }, "Đơn đặt bị quá hạn.");
         }
 
+        if (delegation != null)
+        {
+            delegation.UsedAt = DateTime.UtcNow;
+            _context.AuditLogs.Add(new AuditLog { Action = "DELEGATE_PICKUP", TargetEntity = "Booking",
+                TargetId = booking.Id.ToString(), Details = "Delegate " + delegation.Id + ": " + delegation.Contact });
+        }
         booking.CheckedOutAt = DateTime.UtcNow;
         var locker = booking.Locker;
 
         // Find device
         var iotDevice = await _context.IoTDevices
-            .FirstOrDefaultAsync(d => d.Id == locker.IoTDeviceId || d.StationId == request.StationId);
-        var deviceCode = iotDevice?.DeviceCode ?? "SIM-MQTT-001";
+            .FirstOrDefaultAsync(d => d.Id == locker.IoTDeviceId && d.StationId == request.StationId);
+        if (iotDevice == null)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Ô tủ chưa được ánh xạ thiết bị tại trạm.");
+        var deviceCode = iotDevice.DeviceCode;
+        var sessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        booking.KioskSessionHash = OnlineTicket.HashPin(sessionToken);
+        booking.KioskSessionExpiresAt = DateTime.UtcNow.AddMinutes(15);
 
         await _context.SaveChangesAsync();
 
         // Dispatch MQTT Unlock command
-        await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, locker.Id, locker.Size.ToString());
+        if (!await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, locker.Id, locker.LockerCode))
+        {
+            if (delegation != null) delegation.UsedAt = null;
+            booking.CheckedOutAt = null;
+            await _context.SaveChangesAsync();
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không gửi được lệnh mở tủ. Vui lòng thử lại hoặc liên hệ nhân viên.");
+        }
 
         // Dispatch SignalR
         await _notificationService.NotifyLockerUnlockedAsync(request.StationId, locker.Id, locker.LockerCode);
 
         return ApiResponse<KioskCheckOutResponse>.SuccessResponse(new KioskCheckOutResponse
         {
+            SessionToken = sessionToken,
             BookingId = booking.Id,
             BookingCode = booking.BookingCode,
             LockerId = locker.Id,
@@ -278,7 +254,7 @@ public class KioskService : IKioskService
             LockerSize = locker.Size.ToString(),
             DoorState = locker.DoorState,
             IsOverdue = false,
-            Message = $"Mở khóa thành công! Ô tủ {locker.LockerCode} đã mở. Vui lòng lấy toàn bộ hành lý và đóng chặt cửa."
+            Message = $"Mở khóa thành công! Đã gửi lệnh mở ô tủ {locker.LockerCode}. Vui lòng lấy toàn bộ hành lý và đóng chặt cửa."
         }, "Check-out thành công");
     }
 
