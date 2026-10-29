@@ -117,9 +117,12 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 
 // === Background Jobs (Nhiệm) ===
-builder.Services.AddHostedService<BookingExpirationJob>();
-builder.Services.AddHostedService<NoShowJob>();
-builder.Services.AddHostedService<OverdueCheckJob>();
+if (builder.Configuration.GetValue("BackgroundJobs:Enabled", true))
+{
+    builder.Services.AddHostedService<BookingExpirationJob>();
+    builder.Services.AddHostedService<NoShowJob>();
+    builder.Services.AddHostedService<OverdueCheckJob>();
+}
 
 // === SignalR & Realtime Locker Notifications ===
 builder.Services.AddSignalR();
