@@ -43,13 +43,14 @@ public static class DependencyInjection
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddHttpClient<IGoogleAuthService, GoogleAuthService>();
 
-        // 4. Đăng ký các service Admin (Phân hệ Quản trị Vận hành)
+        // 4. Đăng ký các service Admin (Phân hệ Quản trị Vận hành & Đối soát)
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IAdminStationLockerService, AdminStationLockerService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IAdminIncidentService, AdminIncidentService>();
         services.AddScoped<IAdminAbandonedPropertyService, AdminAbandonedPropertyService>();
+        services.AddScoped<IAdminReconciliationService, AdminReconciliationService>();
 
         return services;
     }

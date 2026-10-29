@@ -22,6 +22,18 @@ public class UpdateUserRoleRequest
     public UserRole Role { get; set; }
 }
 
+public class UpdateUserDebtRequest
+{
+    public decimal OverdueDebt { get; set; }
+    public string? Reason { get; set; }
+    public bool AutoSuspendIfDebt { get; set; } = true;
+}
+
+public class BlockDebtorsRequest
+{
+    public string? Reason { get; set; }
+}
+
 public class UserAdminListItemDto
 {
     public Guid Id { get; set; }

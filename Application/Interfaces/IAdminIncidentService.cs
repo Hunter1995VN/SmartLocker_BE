@@ -7,6 +7,7 @@ public interface IAdminIncidentService
 {
     Task<ApiResponse<List<IncidentDto>>> GetIncidentsAsync(string? status, string? severity);
     Task<ApiResponse<IncidentDto>> CreateIncidentAsync(CreateIncidentRequest request, Guid reportedByUserId);
+    Task<ApiResponse<IncidentDto>> UpdateIncidentStatusAsync(Guid incidentId, UpdateIncidentStatusRequest request, Guid adminOrStaffUserId, string? userEmail, string? userRole);
     Task<ApiResponse<bool>> RemoteUnlockEmergencyAsync(Guid incidentId, RemoteUnlockRequest request, Guid adminOrStaffUserId, string? userEmail, string? userRole);
     Task<ApiResponse<bool>> DirectRemoteUnlockLockerAsync(Guid lockerId, RemoteUnlockRequest request, Guid adminOrStaffUserId, string? userEmail, string? userRole);
 }

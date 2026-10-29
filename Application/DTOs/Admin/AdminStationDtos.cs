@@ -31,6 +31,23 @@ public class UpdateStationRequest
     public string? ContactPhone { get; set; }
 }
 
+public class StationPricingPolicyDto
+{
+    public Guid Id { get; set; }
+    public string Size { get; set; } = string.Empty;
+    public decimal PricePerBlock { get; set; }
+    public short BlockHours { get; set; }
+    public decimal OverdueFeePerHour { get; set; }
+    public short GracePeriodMinutes { get; set; }
+    public short RefundCutoffHours { get; set; }
+    public decimal RefundRateEarly { get; set; }
+    public decimal RefundRateLate { get; set; }
+    public short MinHours { get; set; }
+    public short MaxHours { get; set; }
+    public short NoShowWindowMinutes { get; set; }
+    public DateTime EffectiveFrom { get; set; }
+}
+
 public class StationAdminDetailDto
 {
     public Guid Id { get; set; }
@@ -51,6 +68,7 @@ public class StationAdminDetailDto
     public decimal? PriceS { get; set; }
     public decimal? PriceM { get; set; }
     public decimal? PriceL { get; set; }
+    public List<StationPricingPolicyDto> PricingPolicies { get; set; } = new();
     public DateTime CreatedAt { get; set; }
 }
 
@@ -61,4 +79,10 @@ public class UpdatePricingPolicyRequest
     public short BlockHours { get; set; } = 1;
     public decimal OverdueFeePerHour { get; set; }
     public short GracePeriodMinutes { get; set; } = 15;
+    public short RefundCutoffHours { get; set; } = 2;
+    public decimal RefundRateEarly { get; set; } = 1.00m;
+    public decimal RefundRateLate { get; set; } = 0.50m;
+    public short NoShowWindowMinutes { get; set; } = 30;
+    public short MinHours { get; set; } = 1;
+    public short MaxHours { get; set; } = 72;
 }
