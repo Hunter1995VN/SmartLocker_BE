@@ -64,6 +64,24 @@ public class TravelerSupportController(ISmartLockerDbContext db) : ControllerBas
         grant.RevokedAt = DateTime.UtcNow; await db.SaveChangesAsync(); return NoContent();
     }
 
+    [HttpPost("review")]
+    public async Task<IActionResult> Review(Guid bookingId, ReviewRequest request)
+    {
+        var booking = await Owned(bookingId);
+        if (booking == null) return NotFound();
+        var allowed = new[] { "CLEAN", "FAST", "EASY_TO_FIND" };
+        if (booking.Status != BookingStatus.COMPLETED || request.Stars is < 1 or > 5
+            || (request.Comment?.Length ?? 0) > 1000 || (request.Criteria?.Length ?? 0) > 3
+            || request.Criteria?.Any(c => !allowed.Contains(c)) == true)
+            return BadRequest(new { message = "Đánh giá 1–5 sao cho đơn đã hoàn tất, góp ý tối đa 1000 ký tự." });
+        if (await db.StationReviews.AnyAsync(x => x.BookingId == bookingId)) return Conflict(new { message = "Đơn đã được đánh giá." });
+        db.StationReviews.Add(new StationReview { Id = Guid.NewGuid(), BookingId = bookingId, Stars = request.Stars,
+            Comment = request.Comment?.Trim() ?? "", Criteria = string.Join(',', request.Criteria?.Distinct() ?? []), CreatedAt = DateTime.UtcNow });
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateException) { return Conflict(new { message = "Không lưu được đánh giá. Hãy tải lại trước khi gửi lại." }); }
+        return Ok(new { message = "Đã ghi nhận đánh giá." });
+    }
+
     [HttpPost("lost-items")]
     public async Task<IActionResult> ReportLost(Guid bookingId, LostRequest request)
     {
