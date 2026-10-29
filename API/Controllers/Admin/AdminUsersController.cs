@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
 /// <summary>
-/// UC-A05 & UC-A06: Manage Users & Bad Debt Blocking — Quản lý tài khoản nội bộ, danh sách khách hàng & chặn tài khoản nợ xấu
+/// UC-A05 & UC-A06: Quản lý tài khoản nội bộ & Phân quyền vai trò (Admin / Staff RBAC) + Kiểm soát danh sách khách hàng & nợ xấu
 /// </summary>
 [ApiController]
 [Route("api/admin/users")]
@@ -46,7 +46,30 @@ public class AdminUsersController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/admin/users/staff — Tạo tài khoản Staff mới
+    /// GET /api/admin/users/internal — Danh sách tài khoản nội bộ (Admin & Staff) kèm thống kê phiên đăng nhập và thao tác (UC-A05)
+    /// </summary>
+    [HttpGet("internal")]
+    public async Task<IActionResult> GetInternalUsers(
+        [FromQuery] string? search = null,
+        [FromQuery] string? role = null,
+        [FromQuery] string? status = null)
+    {
+        var result = await _userService.GetInternalUsersAsync(search, role, status);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// GET /api/admin/users/rbac-summary — Ma trận Phân quyền RBAC, tổng quan vai trò & nhật ký thay đổi phân quyền (UC-A05)
+    /// </summary>
+    [HttpGet("rbac-summary")]
+    public async Task<IActionResult> GetRbacSummary()
+    {
+        var result = await _userService.GetRbacSummaryAsync();
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/admin/users/staff — Tạo tài khoản nội bộ (Staff / Admin) mới (UC-A05)
     /// </summary>
     [HttpPost("staff")]
     [Authorize(Roles = "ADMIN")]
@@ -63,7 +86,58 @@ public class AdminUsersController : ControllerBase
     }
 
     /// <summary>
-    /// PATCH /api/admin/users/{userId}/status — Kích hoạt / Chặn tài khoản (UC-A06)
+    /// PUT /api/admin/users/{userId} — Cập nhật hồ sơ tài khoản nội bộ (Họ tên, Email, SĐT, Vai trò) (UC-A05)
+    /// </summary>
+    [HttpPut("{userId:guid}")]
+    [Authorize(Roles = "ADMIN")]
+    public async Task<IActionResult> UpdateInternalUser(Guid userId, [FromBody] UpdateInternalUserRequest request)
+    {
+        var adminId = GetUserId();
+        if (adminId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _userService.UpdateInternalUserAsync(userId, request, adminId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/admin/users/{userId}/reset-password — Cấp lại / Đặt lại mật khẩu cho tài khoản nội bộ (UC-A05)
+    /// </summary>
+    [HttpPost("{userId:guid}/reset-password")]
+    [Authorize(Roles = "ADMIN")]
+    public async Task<IActionResult> ResetInternalPassword(Guid userId, [FromBody] ResetInternalPasswordRequest request)
+    {
+        var adminId = GetUserId();
+        if (adminId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _userService.ResetInternalPasswordAsync(userId, request, adminId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// DELETE /api/admin/users/{userId} — Vô hiệu hóa / Thu hồi tài khoản nội bộ (Soft Delete -> DELETED) (UC-A05)
+    /// </summary>
+    [HttpDelete("{userId:guid}")]
+    [Authorize(Roles = "ADMIN")]
+    public async Task<IActionResult> DeactivateInternalUser(Guid userId, [FromQuery] string? reason = null)
+    {
+        var adminId = GetUserId();
+        if (adminId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _userService.DeactivateInternalUserAsync(userId, reason, adminId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// PATCH /api/admin/users/{userId}/status — Kích hoạt / Chặn tài khoản (UC-A05 & UC-A06)
     /// </summary>
     [HttpPatch("{userId:guid}/status")]
     [Authorize(Roles = "ADMIN")]
@@ -80,7 +154,7 @@ public class AdminUsersController : ControllerBase
     }
 
     /// <summary>
-    /// PATCH /api/admin/users/{userId}/role — Thay đổi phân quyền (Role)
+    /// PATCH /api/admin/users/{userId}/role — Thay đổi phân quyền vai trò RBAC (UC-A05)
     /// </summary>
     [HttpPatch("{userId:guid}/role")]
     [Authorize(Roles = "ADMIN")]
