@@ -175,5 +175,24 @@ public class TicketTests : IDisposable
         Assert.Null(result.Data.AccessCode);
     }
 
+    [Theory]
+    [InlineData(BookingStatus.PENDING_PAYMENT, true)]
+    [InlineData(BookingStatus.COMPLETED, true)]
+    [InlineData(BookingStatus.CANCELLED, true)]
+    [InlineData(BookingStatus.CONFIRMED, false)]
+    public async Task IneligibleBookingNeverExposesExistingCredential(BookingStatus status, bool active)
+    {
+        var booking = new Booking { Id = Guid.NewGuid(), BookingCode = "HIDDEN", UserId = _userId,
+            StationId = _station.Id, Station = _station, Status = status, EndAt = DateTime.UtcNow.AddHours(1) };
+        booking.AccessCredential = new AccessCredential { Id = Guid.NewGuid(), BookingId = booking.Id,
+            IsActive = active, OfflinePayload = "01234567", QrPayload = "secret" };
+        _db.Bookings.Add(booking);
+        await _db.SaveChangesAsync();
+        var result = await CreateBookingService().GetBookingByIdAsync(_userId, booking.Id);
+        Assert.True(result.Success);
+        Assert.Null(result.Data!.AccessCode);
+        Assert.Null(result.Data.QrPayload);
+    }
+
     public void Dispose() => _db.Dispose();
 }

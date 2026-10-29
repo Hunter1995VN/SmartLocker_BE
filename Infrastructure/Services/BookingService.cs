@@ -661,6 +661,8 @@ public class BookingService : IBookingService
 
     private static BookingDto MapToBookingDto(Booking booking)
     {
+        var ticketVisible = booking.Status is BookingStatus.CONFIRMED or BookingStatus.STORED
+            && booking.AccessCredential is { IsActive: true, RevokedAt: null };
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
         var confirmedAt = basePayment?.PaidAt ?? booking.CreatedAt;
         var holdExpiresAt = booking.Status == BookingStatus.CONFIRMED ? (DateTime?)confirmedAt.AddMinutes(30) : null;
@@ -675,8 +677,8 @@ public class BookingService : IBookingService
             StationName = booking.Station.Name,
             StationAddress = booking.Station.Address,
             LockerCode = booking.Locker?.LockerCode,
-            AccessCode = booking.AccessCredential?.OfflinePayload,
-            QrPayload = booking.AccessCredential?.QrPayload,
+            AccessCode = ticketVisible ? booking.AccessCredential?.OfflinePayload : null,
+            QrPayload = ticketVisible ? booking.AccessCredential?.QrPayload : null,
             Size = booking.Size.ToString(),
             Status = booking.Status.ToString(),
             StartAt = booking.StartAt,
