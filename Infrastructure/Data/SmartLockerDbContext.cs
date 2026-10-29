@@ -24,6 +24,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     public DbSet<MaintenanceTicket> MaintenanceTickets => Set<MaintenanceTicket>();
     public DbSet<AbandonedPropertyRecord> AbandonedPropertyRecords => Set<AbandonedPropertyRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Voucher> Vouchers => Set<Voucher>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

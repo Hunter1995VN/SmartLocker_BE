@@ -26,6 +26,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     public DbSet<MaintenanceTicket> MaintenanceTickets => Set<MaintenanceTicket>();
     public DbSet<AbandonedPropertyRecord> AbandonedPropertyRecords => Set<AbandonedPropertyRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Voucher> Vouchers => Set<Voucher>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -224,6 +225,22 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(l => l.Id).ValueGeneratedOnAdd();
             entity.Property(l => l.Action).IsRequired().HasMaxLength(100);
             entity.Property(l => l.TargetEntity).IsRequired().HasMaxLength(100);
+        });
+
+        // === Ánh xạ bảng Vouchers ===
+        modelBuilder.Entity<Voucher>(entity =>
+        {
+            entity.ToTable("Vouchers");
+            entity.HasKey(v => v.Id);
+            entity.Property(v => v.Id).ValueGeneratedNever();
+            entity.Property(v => v.Code).IsRequired().HasMaxLength(40);
+            entity.Property(v => v.Title).IsRequired().HasMaxLength(150);
+            entity.Property(v => v.Description).HasMaxLength(350);
+            entity.Property(v => v.DiscountType).IsRequired().HasMaxLength(20);
+            entity.Property(v => v.DiscountValue).HasColumnType("decimal(12,2)");
+            entity.Property(v => v.MaxDiscountAmount).HasColumnType("decimal(12,2)");
+            entity.Property(v => v.MinOrderAmount).HasColumnType("decimal(12,2)");
+            entity.HasIndex(v => v.Code).IsUnique();
         });
     }
 }
