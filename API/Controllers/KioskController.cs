@@ -4,6 +4,7 @@ using Application.DTOs.Kiosk;
 using Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("kiosk")]
 [ApiController]
 [Route("api/kiosk")]
 public class KioskController : ControllerBase

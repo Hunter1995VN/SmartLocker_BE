@@ -24,6 +24,7 @@ public class KioskCheckInRequest
 
 public class KioskCheckInResponse
 {
+    public string? SessionToken { get; set; }
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
     public Guid LockerId { get; set; }
@@ -42,6 +43,7 @@ public class KioskCheckOutRequest
 
 public class KioskCheckOutResponse
 {
+    public string? SessionToken { get; set; }
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
     public Guid? LockerId { get; set; }
@@ -56,6 +58,9 @@ public class KioskCheckOutResponse
 
 public class KioskManualConfirmRequest
 {
+    public string? SessionToken { get; set; }
+    public string CredentialType { get; set; } = "QR";
+    public string Payload { get; set; } = string.Empty;
     public Guid StationId { get; set; }
     public Guid BookingId { get; set; }
     public Guid LockerId { get; set; }
