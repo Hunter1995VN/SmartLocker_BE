@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using System.Security.Cryptography;
 using System.Text;
@@ -17,6 +17,7 @@ public class KioskService : IKioskService
     private readonly IMqttPublishService _mqttPublishService;
     private readonly ILockerNotificationService _notificationService;
     private readonly IPricingService _pricingService;
+    private readonly IOfflineTicketService _offlineTicketService;
     private readonly ILogger<KioskService> _logger;
 
     public KioskService(
@@ -24,12 +25,14 @@ public class KioskService : IKioskService
         IMqttPublishService mqttPublishService,
         ILockerNotificationService notificationService,
         IPricingService pricingService,
+        IOfflineTicketService offlineTicketService,
         ILogger<KioskService> logger)
     {
         _context = context;
         _mqttPublishService = mqttPublishService;
         _notificationService = notificationService;
         _pricingService = pricingService;
+        _offlineTicketService = offlineTicketService;
         _logger = logger;
     }
 
@@ -46,6 +49,28 @@ public class KioskService : IKioskService
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var trimmed = raw.Trim();
+
+        // 0. Offline HMAC Token check (JWS compact: header.payload.signature)
+        if (trimmed.Contains('.'))
+        {
+            var (isValid, ticket, error) = _offlineTicketService.VerifyHmacToken(trimmed);
+            if (isValid && ticket != null)
+            {
+                _logger.LogInformation("Successfully verified Offline HMAC Token for Booking {Code} at Station {StationId}", ticket.BookingCode, ticket.StationId);
+                return new ParsedQr
+                {
+                    BookingId = ticket.BookingId != Guid.Empty ? ticket.BookingId : null,
+                    BookingCode = ticket.BookingCode,
+                    StationId = ticket.StationId != Guid.Empty ? ticket.StationId : null,
+                    AccessCode = ticket.AccessPin,
+                    Nonce = ticket.Nonce
+                };
+            }
+            else
+            {
+                _logger.LogWarning("Failed to verify HMAC Token: {Error}", error);
+            }
+        }
 
         // 1. Direct Booking Code or alphanumeric string check
         if (trimmed.StartsWith("BK-", StringComparison.OrdinalIgnoreCase) || (!trimmed.StartsWith("{") && !trimmed.Contains(" ") && trimmed.Length <= 32))
@@ -356,11 +381,19 @@ public class KioskService : IKioskService
         if (booking.Locker == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin ô tủ của đơn đặt.");
 
-        // Check overdue
+        // Check overdue (Dynamic real-time calculation)
         var now = DateTime.UtcNow;
-        var graceEnd = booking.EndAt.AddMinutes(15);
-        if (now > graceEnd && booking.IsOverdue)
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var graceMinutes = policy?.GracePeriodMinutes ?? 15;
+        var graceEnd = booking.EndAt.AddMinutes(graceMinutes);
+
+        if (booking.IsOverdue || now > graceEnd)
         {
+            booking.IsOverdue = true;
+            if (booking.OverdueSince == null) booking.OverdueSince = graceEnd;
+            await _context.SaveChangesAsync();
+
+            var overdueFee = policy != null ? _pricingService.CalculateOverdueFee(booking, policy) : 20000m;
             return ApiResponse<KioskCheckOutResponse>.SuccessResponse(new KioskCheckOutResponse
             {
                 BookingId = booking.Id,
@@ -369,8 +402,8 @@ public class KioskService : IKioskService
                 LockerCode = booking.Locker.LockerCode,
                 LockerSize = booking.Locker.Size.ToString(),
                 IsOverdue = true,
-                OverdueFee = 20000, // standard overtime fee or calculated
-                Message = "Đơn của bạn đã quá hạn thuê. Vui lòng thanh toán phụ phí trước khi lấy đồ."
+                OverdueFee = overdueFee,
+                Message = $"Đơn của bạn đã quá hạn thuê. Phụ phí quá hạn hiện tại là {overdueFee:N0} VNĐ. Vui lòng thanh toán phụ phí trước khi lấy đồ."
             }, "Đơn đặt bị quá hạn.");
         }
 

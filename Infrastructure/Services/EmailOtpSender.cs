@@ -54,14 +54,18 @@ public class EmailOtpSender : IOtpSender
 
         try
         {
-            var fromEmail = string.IsNullOrWhiteSpace(_settings.FromEmail) || _settings.FromEmail == "no-reply@smartlocker.vn"
-                ? _settings.Username.Trim()
-                : _settings.FromEmail.Trim();
+            var fromEmail = !string.IsNullOrWhiteSpace(_settings.FromEmail)
+                ? _settings.FromEmail.Trim()
+                : _settings.Username.Trim();
+
+            var fromName = !string.IsNullOrWhiteSpace(_settings.FromName)
+                ? _settings.FromName.Trim()
+                : "SmartLocker";
 
             var appPassword = _settings.Password.Replace(" ", "");
 
             var email = new MimeMessage();
-            email.From.Add(new MailboxAddress(_settings.FromName, fromEmail));
+            email.From.Add(new MailboxAddress(fromName, fromEmail));
             email.To.Add(MailboxAddress.Parse(destination));
             email.Subject = "[SmartLocker] Mã xác thực OTP của bạn";
 

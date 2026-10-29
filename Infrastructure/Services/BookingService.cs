@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using System.Collections.Concurrent;
 using Application.DTOs.Booking;
@@ -17,15 +17,18 @@ public class BookingService : IBookingService
     private readonly IPricingService _pricingService;
     private readonly IPaymentGatewayService _paymentGateway;
     private readonly IPaymentService _paymentService;
+    private readonly IOfflineTicketService _offlineTicketService;
     private readonly ILogger<BookingService> _logger;
 
     public BookingService(ISmartLockerDbContext context, IPricingService pricingService,
-        IPaymentGatewayService paymentGateway, IPaymentService paymentService, ILogger<BookingService> logger)
+        IPaymentGatewayService paymentGateway, IPaymentService paymentService,
+        IOfflineTicketService offlineTicketService, ILogger<BookingService> logger)
     {
         _context = context;
         _pricingService = pricingService;
         _paymentGateway = paymentGateway;
         _paymentService = paymentService;
+        _offlineTicketService = offlineTicketService;
         _logger = logger;
     }
 
@@ -47,8 +50,13 @@ public class BookingService : IBookingService
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null || user.Status != UserStatus.ACTIVE)
             return ApiResponse<CreateBookingResponse>.ErrorResponse("Tài khoản không hợp lệ hoặc chưa được kích hoạt.");
-        if (user.OverdueDebt > 0)
-            return ApiResponse<CreateBookingResponse>.ErrorResponse("Bạn có khoản nợ quá hạn chưa thanh toán. Vui lòng thanh toán trước.");
+        var hasActiveOverdue = await _context.Bookings.AnyAsync(b =>
+            b.UserId == userId &&
+            b.Status == BookingStatus.STORED &&
+            (b.IsOverdue || b.EndAt.AddMinutes(15) < DateTime.UtcNow));
+
+        if (user.OverdueDebt > 0 || hasActiveOverdue)
+            return ApiResponse<CreateBookingResponse>.ErrorResponse("Bạn có khoản nợ hoặc đơn tủ quá hạn chưa thanh toán. Vui lòng thanh toán trước khi đặt đơn mới.");
 
         // Check station
         var station = await _context.Stations.FirstOrDefaultAsync(s => s.Id == request.StationId);
@@ -650,12 +658,40 @@ public class BookingService : IBookingService
 
     // === Private helpers ===
 
-    private static BookingDto MapToBookingDto(Booking booking)
+    private BookingDto MapToBookingDto(Booking booking)
     {
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
         var confirmedAt = basePayment?.PaidAt ?? booking.CreatedAt;
         var holdExpiresAt = booking.Status == BookingStatus.CONFIRMED ? (DateTime?)confirmedAt.AddMinutes(30) : null;
         var duration = Math.Max(1, Math.Round((booking.EndAt - booking.StartAt).TotalHours, 1));
+
+        string? pin = null;
+        string? hmacToken = null;
+        DateTime? offlineExpiresAt = null;
+        bool isOfflineReady = false;
+
+        if (booking.AccessCredential != null)
+        {
+            pin = _offlineTicketService.ExtractPinFromCredential(booking.AccessCredential);
+            offlineExpiresAt = booking.AccessCredential.OfflineExpiresAt ?? booking.EndAt.AddHours(24);
+
+            if (!string.IsNullOrWhiteSpace(booking.AccessCredential.OfflinePayload) && booking.AccessCredential.OfflinePayload.Contains('.'))
+            {
+                hmacToken = booking.AccessCredential.OfflinePayload;
+                isOfflineReady = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(booking.AccessCredential.QrPayload) && booking.AccessCredential.QrPayload.Contains('.'))
+            {
+                hmacToken = booking.AccessCredential.QrPayload;
+                isOfflineReady = true;
+            }
+            else
+            {
+                var nonce = booking.AccessCredential.OfflineNonce ?? Guid.NewGuid().ToString("N");
+                hmacToken = _offlineTicketService.GenerateHmacToken(booking, pin, offlineExpiresAt.Value, nonce);
+                isOfflineReady = true;
+            }
+        }
 
         return new()
         {
@@ -666,8 +702,11 @@ public class BookingService : IBookingService
             StationName = booking.Station.Name,
             StationAddress = booking.Station.Address,
             LockerCode = booking.Locker?.LockerCode,
-            AccessCode = booking.AccessCredential?.OfflinePayload,
-            QrPayload = booking.AccessCredential?.QrPayload,
+            AccessCode = pin ?? booking.AccessCredential?.OfflinePayload,
+            QrPayload = hmacToken ?? booking.AccessCredential?.QrPayload,
+            OfflineHmacToken = hmacToken,
+            OfflineExpiresAt = offlineExpiresAt,
+            IsOfflineReady = isOfflineReady,
             Size = booking.Size.ToString(),
             Status = booking.Status.ToString(),
             StartAt = booking.StartAt,

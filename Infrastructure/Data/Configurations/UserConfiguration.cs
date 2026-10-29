@@ -21,13 +21,13 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.Role)
             .IsRequired()
             .HasMaxLength(20)
-            .HasConversion(v => v.ToString(), v => Enum.Parse<UserRole>(v))
+            .HasConversion(v => v.ToString(), v => Enum.Parse<UserRole>(v, true))
             .HasDefaultValue(UserRole.TRAVELER);
 
         builder.Property(x => x.Status)
             .IsRequired()
             .HasMaxLength(30)
-            .HasConversion(v => v.ToString(), v => Enum.Parse<UserStatus>(v))
+            .HasConversion(v => v.ToString(), v => Enum.Parse<UserStatus>(v, true))
             .HasDefaultValue(UserStatus.PENDING_VERIFICATION);
 
         builder.Property(x => x.OverdueDebt)
