@@ -260,44 +260,42 @@ public class KioskService : IKioskService
 
     public async Task<ApiResponse<bool>> ManualConfirmAsync(KioskManualConfirmRequest request)
     {
-        var booking = await _context.Bookings
-            .Include(b => b.Locker)
-            .FirstOrDefaultAsync(b => b.Id == request.BookingId);
-
-        if (booking == null)
-            return ApiResponse<bool>.ErrorResponse("Không tìm thấy booking.");
-
-        booking.Status = BookingStatus.COMPLETED;
-        booking.CheckedOutAt = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(request.PhotoBase64))
+        if (string.IsNullOrEmpty(request.SessionToken) || request.SessionToken.Length != 64)
+            return ApiResponse<bool>.ErrorResponse("Phiên kiosk không hợp lệ.");
+        var sessionHash = OnlineTicket.HashPin(request.SessionToken);
+        var booking = await _context.Bookings.Include(b => b.Locker).FirstOrDefaultAsync(b => b.Id == request.BookingId
+            && b.StationId == request.StationId && b.LockerId == request.LockerId && b.KioskSessionHash == sessionHash
+            && b.KioskSessionExpiresAt > DateTime.UtcNow);
+        if (booking == null || booking.Status != BookingStatus.STORED || booking.CheckedOutAt == null
+            || booking.CheckedOutAt > DateTime.UtcNow.AddSeconds(-30))
+            return ApiResponse<bool>.ErrorResponse("Yêu cầu không hợp lệ hoặc chưa đến thời gian báo lỗi cảm biến.");
+        if (request.PhotoBase64 == null || !request.PhotoBase64.StartsWith("data:image/jpeg;base64,")
+            || request.PhotoBase64.Length > 2_800_000)
+            return ApiResponse<bool>.ErrorResponse("Cần ảnh JPEG bằng chứng, tối đa 2 MB.");
+        byte[] photo;
+        try { photo = Convert.FromBase64String(request.PhotoBase64.Split(',')[1]); }
+        catch (FormatException) { return ApiResponse<bool>.ErrorResponse("Ảnh không hợp lệ."); }
+        if (photo.Length < 4 || photo.Length > 2_000_000 || photo[0] != 0xff || photo[1] != 0xd8
+            || photo[^2] != 0xff || photo[^1] != 0xd9)
+            return ApiResponse<bool>.ErrorResponse("Ảnh JPEG không hợp lệ.");
+        if (!string.IsNullOrEmpty(booking.ManualConfirmPhotoUrl))
+            return ApiResponse<bool>.SuccessResponse(true, "Yêu cầu đã được gửi, đang chờ nhân viên duyệt.");
+        var name = Guid.NewGuid().ToString("N") + ".jpg";
+        var folder = Path.Combine(AppContext.BaseDirectory, "App_Data", "manual-confirm");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllBytesAsync(Path.Combine(folder, name), photo);
+        booking.ManualConfirmPhotoUrl = name;
+        _context.SecurityIncidents.Add(new SecurityIncident
         {
-            booking.ManualConfirmPhotoUrl = request.PhotoBase64.Length > 200 ? request.PhotoBase64[..200] + "...[TRUNCATED]" : request.PhotoBase64;
-        }
-
-        if (booking.Locker != null)
-        {
-            booking.Locker.HealthStatus = LockerHealthStatus.MAINTENANCE;
-            booking.Locker.BusinessStatus = LockerBusinessStatus.DISABLED;
-            booking.Locker.Notes = $"Báo lỗi cảm biến: Khách xác nhận thủ công lúc {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC.";
-
-            // Create Incident ticket
-            _context.SecurityIncidents.Add(new SecurityIncident
-            {
-                IncidentCode = "INC-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + new Random().Next(1000, 9999),
-                StationId = request.StationId,
-                LockerId = booking.Locker.Id,
-                BookingId = booking.Id,
-                ReportedByUserId = booking.UserId,
-                Type = IncidentType.DOOR_JAMMED,
-                Severity = "HIGH",
-                Status = IncidentStatus.OPEN,
-                Description = $"Cảm biến không phản hồi đóng cửa - Ô {booking.Locker.LockerCode}. Khách hàng đã xác nhận thủ công kèm ảnh chụp camera. Ô tủ đã tự động chuyển sang chế độ bảo trì.",
-                CreatedAt = DateTime.UtcNow
-            });
-        }
-
+            Id = Guid.NewGuid(), IncidentCode = "MC-" + Guid.NewGuid().ToString("N")[..12],
+            StationId = booking.StationId, LockerId = request.LockerId, BookingId = booking.Id,
+            ReportedByUserId = booking.UserId, Type = IncidentType.DOOR_JAMMED,
+            Severity = "HIGH", Status = IncidentStatus.OPEN,
+            Description = "UC-S08: Khách gửi ảnh báo lỗi cảm biến. Cần nhân viên duyệt trước khi đóng đơn.",
+            CreatedAt = DateTime.UtcNow
+        });
         await _context.SaveChangesAsync();
-        return ApiResponse<bool>.SuccessResponse(true, "Đã ghi nhận xác nhận thủ công và chuyển ô tủ sang trạng thái bảo trì.");
+        return ApiResponse<bool>.SuccessResponse(true, "Đã gửi ảnh. Vui lòng chờ nhân viên xác nhận.");
     }
 
     public async Task<ApiResponse<KioskStationStatusResponse>> GetStationStatusAsync(Guid stationId)
