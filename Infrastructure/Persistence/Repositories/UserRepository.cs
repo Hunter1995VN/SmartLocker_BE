@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Domain.Entities;
+using Domain.Enums;
 using Domain.Interfaces;
 
 namespace Infrastructure.Persistence.Repositories;
@@ -36,12 +37,40 @@ public class UserRepository : IUserRepository
 
     public async Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default)
     {
-        return await _db.Users.AnyAsync(u => u.Email == email && u.DeletedAt == null, ct);
+        return await _db.Users.AnyAsync(u =>
+            u.Email == email &&
+            u.DeletedAt == null &&
+            u.Status != UserStatus.PENDING_VERIFICATION, ct);
     }
 
     public async Task<bool> ExistsByPhoneAsync(string phone, CancellationToken ct = default)
     {
-        return await _db.Users.AnyAsync(u => u.Phone == phone && u.DeletedAt == null, ct);
+        return await _db.Users.AnyAsync(u =>
+            u.Phone == phone &&
+            u.DeletedAt == null &&
+            u.Status != UserStatus.PENDING_VERIFICATION, ct);
+    }
+
+    public async Task RemoveUnverifiedByEmailOrPhoneAsync(string email, string phone, CancellationToken ct = default)
+    {
+        var unverifiedUsers = await _db.Users
+            .Where(u => u.Status == UserStatus.PENDING_VERIFICATION
+                     && (u.Email == email || (!string.IsNullOrEmpty(phone) && u.Phone == phone)))
+            .ToListAsync(ct);
+
+        if (unverifiedUsers.Count == 0)
+            return;
+
+        var unverifiedIds = unverifiedUsers.Select(u => u.Id).ToList();
+        var linkedOtps = await _db.OtpCodes
+            .Where(o => o.UserId != null && unverifiedIds.Contains(o.UserId.Value))
+            .ToListAsync(ct);
+
+        if (linkedOtps.Count > 0)
+            _db.OtpCodes.RemoveRange(linkedOtps);
+
+        _db.Users.RemoveRange(unverifiedUsers);
+        await _db.SaveChangesAsync(ct);
     }
 
     public async Task AddAsync(User user, CancellationToken ct = default)
