@@ -6,7 +6,12 @@ using Application.DTOs.Common;
 public interface IAdminUserService
 {
     Task<ApiResponse<List<UserAdminListItemDto>>> GetUsersAsync(string? search, string? role, string? status, int page, int pageSize, bool? hasDebt = null);
+    Task<ApiResponse<List<UserAdminListItemDto>>> GetInternalUsersAsync(string? search, string? role, string? status);
+    Task<ApiResponse<RbacSummaryResponseDto>> GetRbacSummaryAsync();
     Task<ApiResponse<UserAdminListItemDto>> CreateStaffAsync(CreateStaffRequest request, Guid adminUserId);
+    Task<ApiResponse<UserAdminListItemDto>> UpdateInternalUserAsync(Guid userId, UpdateInternalUserRequest request, Guid adminUserId);
+    Task<ApiResponse<bool>> ResetInternalPasswordAsync(Guid userId, ResetInternalPasswordRequest request, Guid adminUserId);
+    Task<ApiResponse<bool>> DeactivateInternalUserAsync(Guid userId, string? reason, Guid adminUserId);
     Task<ApiResponse<bool>> UpdateUserStatusAsync(Guid userId, UpdateUserStatusRequest request, Guid adminUserId);
     Task<ApiResponse<bool>> UpdateUserRoleAsync(Guid userId, UpdateUserRoleRequest request, Guid adminUserId);
     Task<ApiResponse<UserAdminListItemDto>> UpdateUserDebtAsync(Guid userId, UpdateUserDebtRequest request, Guid adminUserId);
