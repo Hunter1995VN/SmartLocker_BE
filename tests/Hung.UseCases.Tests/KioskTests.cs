@@ -122,5 +122,60 @@ public class KioskTests : IDisposable
         var now = DateTime.UtcNow; OnlineTicket.Rotate(c, booking.StationId, now);
         Assert.NotEqual(original, c.QrPayload); Assert.Equal(now.AddSeconds(60), c.QrExpiresAt); Assert.Equal(hash, c.AccessCodeHash);
     }
+    private void PreparePickup()
+    {
+        booking.Status = BookingStatus.STORED;
+        locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
+    }
+    private Task<Application.DTOs.Common.ApiResponse<KioskCheckOutResponse>> Pickup(string pin = "01234567") =>
+        Service.CheckOutAsync(new() { StationId = booking.StationId, CredentialType = "ACCESS_CODE", Payload = pin });
+
+    [Fact] public async Task PickupCompletesOnlyAfterOpenCloseAndRevokesTicket()
+    {
+        PreparePickup(); await db.SaveChangesAsync();
+        Assert.True((await Pickup()).Success);
+        Assert.Equal(BookingStatus.STORED, booking.Status);
+        var handler = new DoorEventHandler(db, notifications.Object, NullLogger<DoorEventHandler>.Instance);
+        var time = DateTimeOffset.UtcNow;
+        async Task Event(string state, int ms) => await handler.HandleAsync("smartlocker/devices/TEST-DEVICE/door",
+            JsonSerializer.Serialize(new DoorEvent(1, Guid.NewGuid(), "TEST-DEVICE", locker.Id, state, time.AddMilliseconds(ms)),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)), false, default);
+        await Event("CLOSED", 1); Assert.Equal(BookingStatus.STORED, booking.Status);
+        await Event("OPEN", 2); await Event("CLOSED", 3);
+        Assert.Equal(BookingStatus.COMPLETED, booking.Status);
+        Assert.Equal(LockerBusinessStatus.AVAILABLE, locker.BusinessStatus);
+        Assert.False(booking.AccessCredential!.IsActive);
+        Assert.NotNull(booking.AccessCredential.RevokedAt);
+    }
+
+    [Theory] [InlineData("EXPIRED")] [InlineData("REVOKED")] [InlineData("USED")]
+    public async Task InvalidDelegationCannotUnlock(string state)
+    {
+        PreparePickup();
+        db.PickupDelegations.Add(new PickupDelegation { Id = Guid.NewGuid(), BookingId = booking.Id,
+            PinHash = OnlineTicket.HashPin("76543210"), ExpiresAt = DateTime.UtcNow.AddMinutes(state == "EXPIRED" ? -1 : 30),
+            RevokedAt = state == "REVOKED" ? DateTime.UtcNow : null, UsedAt = state == "USED" ? DateTime.UtcNow : null });
+        await db.SaveChangesAsync();
+        Assert.False((await Pickup("76543210")).Success); mqtt.VerifyNoOtherCalls();
+    }
+
+    [Fact] public async Task ValidDelegationIsConsumedOnceAfterUnlock()
+    {
+        PreparePickup();
+        var grant = new PickupDelegation { Id = Guid.NewGuid(), BookingId = booking.Id,
+            PinHash = OnlineTicket.HashPin("76543210"), ExpiresAt = DateTime.UtcNow.AddMinutes(30) };
+        db.PickupDelegations.Add(grant); await db.SaveChangesAsync();
+        Assert.True((await Pickup("76543210")).Success); Assert.NotNull(grant.UsedAt);
+        Assert.False((await Pickup("76543210")).Success);
+    }
+
+    [Fact] public async Task SensorReportNeedsAuthenticatedSession()
+    {
+        PreparePickup(); booking.CheckedOutAt = DateTime.UtcNow.AddMinutes(-1); await db.SaveChangesAsync();
+        Assert.False((await Service.ManualConfirmAsync(new() { StationId = booking.StationId,
+            BookingId = booking.Id, LockerId = locker.Id, PhotoBase64 = "data:image/jpeg;base64,/9j/2Q==" })).Success);
+        Assert.Equal(BookingStatus.STORED, booking.Status);
+    }
+
     public void Dispose() => db.Dispose();
 }
