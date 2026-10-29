@@ -44,7 +44,7 @@ public static class DependencyInjection
         services.AddHttpClient<IGoogleAuthService, GoogleAuthService>();
         services.AddScoped<IUserProfileService, UserProfileService>();
 
-        // 4. Đăng ký các service Admin (Phân hệ Quản trị Vận hành & Đối soát)
+        // 4. Đăng ký các service Admin (Phân hệ Quản trị Vận hành, Khuyến mại & Đối soát)
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IAdminStationLockerService, AdminStationLockerService>();
@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminIncidentService, AdminIncidentService>();
         services.AddScoped<IAdminAbandonedPropertyService, AdminAbandonedPropertyService>();
         services.AddScoped<IAdminReconciliationService, AdminReconciliationService>();
+        services.AddScoped<IPromotionVoucherService, PromotionVoucherService>();
         services.AddScoped<IOfflineTicketService, OfflineTicketService>();
 
         return services;

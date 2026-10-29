@@ -59,12 +59,12 @@ public class AuditLogService : IAuditLogService
         int pageSize = 50)
     {
         var baseQuery = _db.AuditLogs.AsNoTracking()
-            .Where(a => a.Action != "USER_NOTIFICATION_PREFS");
+            .Where(a => a.Action != "USER_NOTIFICATION_PREFS" && a.Action != "PROMO_META_SNAPSHOT");
 
         // Thống kê tổng quan trên toàn bộ AuditLogs an ninh
         var totalAll = await baseQuery.CountAsync();
         var unlockCount = await baseQuery.CountAsync(a => a.Action.Contains("UNLOCK"));
-        var policyCount = await baseQuery.CountAsync(a => a.Action.Contains("PRICING") || a.Action.Contains("STATION") || a.Action.Contains("LOCKER") || a.Action.Contains("RECONCIL"));
+        var policyCount = await baseQuery.CountAsync(a => a.Action.Contains("PRICING") || a.Action.Contains("STATION") || a.Action.Contains("LOCKER") || a.Action.Contains("RECONCIL") || a.Action.Contains("VOUCHER") || a.Action.Contains("CAMPAIGN") || a.Action.Contains("PROMO"));
         var userSecCount = await baseQuery.CountAsync(a => a.Action.Contains("USER") || a.Action.Contains("STAFF") || a.Action.Contains("DEBT") || a.Action.Contains("LOGIN"));
         var abandonedCount = await baseQuery.CountAsync(a => a.Action.Contains("ABANDONED"));
 
@@ -129,7 +129,6 @@ public class AuditLogService : IAuditLogService
 
         var items = rawLogs.Select(l =>
         {
-            var hasUser = l.UserId.HasValue && userDict.TryGetValue(l.UserId.Value, out var uInfo);
             var uData = l.UserId.HasValue && userDict.TryGetValue(l.UserId.Value, out var tmp) ? tmp : null;
 
             return new AuditLogItemDto
