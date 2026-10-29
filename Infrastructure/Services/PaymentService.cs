@@ -16,12 +16,18 @@ public class PaymentService : IPaymentService
 {
     private readonly ISmartLockerDbContext _context;
     private readonly IPaymentGatewayService _paymentGateway;
+    private readonly IOfflineTicketService _offlineTicketService;
     private readonly ILogger<PaymentService> _logger;
 
-    public PaymentService(ISmartLockerDbContext context, IPaymentGatewayService paymentGateway, ILogger<PaymentService> logger)
+    public PaymentService(
+        ISmartLockerDbContext context,
+        IPaymentGatewayService paymentGateway,
+        IOfflineTicketService offlineTicketService,
+        ILogger<PaymentService> logger)
     {
         _context = context;
         _paymentGateway = paymentGateway;
+        _offlineTicketService = offlineTicketService;
         _logger = logger;
     }
 
@@ -215,30 +221,28 @@ public class PaymentService : IPaymentService
             var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
             var hashString = Convert.ToBase64String(hashBytes);
 
-            var qrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                JsonSerializer.Serialize(new
-                {
-                    bookingId = payment.BookingId,
-                    bookingCode = payment.Booking.BookingCode,
-                    stationId = payment.Booking.StationId,
-                    accessCode = randomCode,
-                    nonce = Guid.NewGuid().ToString("N"),
-                    expiresAt = payment.Booking.EndAt
-                })));
+            var offlineNonce = Guid.NewGuid().ToString("N");
+            var offlineExpiresAt = payment.Booking.EndAt > DateTime.UtcNow
+                ? payment.Booking.EndAt.AddHours(24)
+                : DateTime.UtcNow.AddHours(24);
+
+            var hmacToken = _offlineTicketService.GenerateHmacToken(payment.Booking, randomCode, offlineExpiresAt, offlineNonce);
 
             _context.AccessCredentials.Add(new AccessCredential
             {
                 BookingId = payment.BookingId,
-                QrPayload = qrPayload,
-                QrNonce = Guid.NewGuid().ToString("N"),
-                QrExpiresAt = payment.Booking.EndAt,
+                QrPayload = hmacToken,
+                QrNonce = offlineNonce,
+                QrExpiresAt = offlineExpiresAt,
                 AccessCodeHash = hashString,
-                OfflinePayload = randomCode,
+                OfflinePayload = hmacToken,
+                OfflineNonce = offlineNonce,
+                OfflineExpiresAt = offlineExpiresAt,
                 IsActive = true,
                 IssuedAt = DateTime.UtcNow
             });
 
-            _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}",
+            _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}, OfflineHMAC generated",
                 payment.Booking.BookingCode, randomCode);
         }
         else if (payment.Kind == PaymentKind.EXTENSION)
@@ -255,6 +259,12 @@ public class PaymentService : IPaymentService
                         payment.Booking.EndAt = newEndAt;
                         payment.Booking.IsOverdue = false;
                         payment.Booking.OverdueSince = null;
+                        var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
+                        if (bookingUser != null && bookingUser.OverdueDebt > 0)
+                        {
+                            bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
+                            bookingUser.UpdatedAt = DateTime.UtcNow;
+                        }
                         payment.Booking.ExtensionCount++;
 
                         _context.BookingExtensions.Add(new BookingExtension
@@ -268,7 +278,20 @@ public class PaymentService : IPaymentService
 
                         var cred = await _context.AccessCredentials
                             .FirstOrDefaultAsync(ac => ac.BookingId == payment.BookingId && ac.IsActive);
-                        if (cred != null) cred.QrExpiresAt = newEndAt;
+                        if (cred != null)
+                        {
+                            var newExpires = newEndAt.AddHours(24);
+                            cred.QrExpiresAt = newExpires;
+                            cred.OfflineExpiresAt = newExpires;
+
+                            var pin = _offlineTicketService.ExtractPinFromCredential(cred);
+                            var nonce = Guid.NewGuid().ToString("N");
+                            var newHmac = _offlineTicketService.GenerateHmacToken(payment.Booking, pin, newExpires, nonce);
+                            cred.OfflinePayload = newHmac;
+                            cred.QrPayload = newHmac;
+                            cred.OfflineNonce = nonce;
+                            cred.QrNonce = nonce;
+                        }
                     }
                 }
                 catch (Exception ex) { _logger.LogError(ex, "Error parsing extension payload"); }
@@ -278,6 +301,12 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.IsOverdue = false;
             payment.Booking.OverdueSince = null;
+            var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
+            if (bookingUser != null && bookingUser.OverdueDebt > 0)
+            {
+                bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
+                bookingUser.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
         await _context.SaveChangesAsync();

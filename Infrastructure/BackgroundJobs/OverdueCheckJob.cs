@@ -47,15 +47,21 @@ public class OverdueCheckJob : BackgroundService
                         policy = await context.PricingPolicies.FindAsync(new object[] { booking.PricingPolicyId }, stoppingToken);
                     }
 
-                    if (policy != null)
+                    if (policy == null)
                     {
-                        var overdueLimit = booking.EndAt.AddMinutes(policy.GracePeriodMinutes);
-                        if (now > overdueLimit)
-                        {
-                            booking.IsOverdue = true;
-                            booking.OverdueSince = overdueLimit;
-                            count++;
-                        }
+                        policy = await context.PricingPolicies
+                            .Where(p => p.StationId == booking.StationId && p.Size == booking.Size && p.EffectiveTo == null)
+                            .OrderByDescending(p => p.EffectiveFrom)
+                            .FirstOrDefaultAsync(stoppingToken);
+                    }
+
+                    var graceMinutes = policy?.GracePeriodMinutes ?? 15;
+                    var overdueLimit = booking.EndAt.AddMinutes(graceMinutes);
+                    if (now > overdueLimit)
+                    {
+                        booking.IsOverdue = true;
+                        booking.OverdueSince = overdueLimit;
+                        count++;
                     }
                 }
 
@@ -70,7 +76,8 @@ public class OverdueCheckJob : BackgroundService
                 _logger.LogError(ex, "Error in OverdueCheckJob");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(300), stoppingToken);
+            // Kiểm tra mỗi 60 giây để đảm bảo cập nhật trạng thái quá hạn nhanh chóng và chính xác nhất
+            await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
         }
     }
 }

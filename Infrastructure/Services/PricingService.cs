@@ -41,8 +41,8 @@ public class PricingService : IPricingService
 
     public decimal CalculateOverdueFee(Booking booking, PricingPolicy policy)
     {
-        var now = DateTime.UtcNow;
-        var overdueMinutes = (now - booking.EndAt).TotalMinutes - policy.GracePeriodMinutes;
+        var endTime = booking.CheckedOutAt ?? DateTime.UtcNow;
+        var overdueMinutes = (endTime - booking.EndAt).TotalMinutes - policy.GracePeriodMinutes;
         if (overdueMinutes <= 0) return 0;
 
         int overdueHours = (int)Math.Ceiling(overdueMinutes / 60.0);
@@ -72,6 +72,7 @@ public class PricingService : IPricingService
     {
         return await _context.PricingPolicies
             .Where(p => p.StationId == stationId && p.Size == size && p.EffectiveTo == null)
+            .OrderByDescending(p => p.EffectiveFrom)
             .FirstOrDefaultAsync();
     }
 }
