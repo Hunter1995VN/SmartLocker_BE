@@ -471,6 +471,18 @@ public class AdminUserService : IAdminUserService
         },
         new()
         {
+            Code = "MANUAL_EXCEPTION_REFUND",
+            Module = "Tài chính & Hoàn tiền Ngoại lệ (UC-A11)",
+            Name = "Phê duyệt lệnh hoàn tiền thủ công cho các trường hợp ngoại lệ",
+            Description = "Thẩm định độc lập, phê duyệt hoặc từ chối lệnh hoàn tiền ngoại lệ (kẹt khóa IoT, mất điện trạm, thu trùng PayOS) và xác nhận giải ngân Napas247.",
+            AdminAllowed = true,
+            StaffAllowed = false,
+            TravelerAllowed = false,
+            StaffScopeNote = "Chỉ được lập đề xuất kèm biên bản hiện trường — CẤM tự duyệt chi",
+            RiskLevel = "CRITICAL"
+        },
+        new()
+        {
             Code = "PROMOTION_VOUCHER_BUDGET",
             Module = "Khuyến mại & Ngân sách (UC-A09)",
             Name = "Thiết lập chiến dịch khuyến mại, mã Voucher & trần ngân sách chiết khấu",
