@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using System.Collections.Concurrent;
 using Application.DTOs.Booking;
@@ -47,8 +47,13 @@ public class BookingService : IBookingService
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null || user.Status != UserStatus.ACTIVE)
             return ApiResponse<CreateBookingResponse>.ErrorResponse("Tài khoản không hợp lệ hoặc chưa được kích hoạt.");
-        if (user.OverdueDebt > 0)
-            return ApiResponse<CreateBookingResponse>.ErrorResponse("Bạn có khoản nợ quá hạn chưa thanh toán. Vui lòng thanh toán trước.");
+        var hasActiveOverdue = await _context.Bookings.AnyAsync(b =>
+            b.UserId == userId &&
+            b.Status == BookingStatus.STORED &&
+            (b.IsOverdue || b.EndAt.AddMinutes(15) < DateTime.UtcNow));
+
+        if (user.OverdueDebt > 0 || hasActiveOverdue)
+            return ApiResponse<CreateBookingResponse>.ErrorResponse("Bạn có khoản nợ hoặc đơn tủ quá hạn chưa thanh toán. Vui lòng thanh toán trước khi đặt đơn mới.");
 
         // Check station
         var station = await _context.Stations.FirstOrDefaultAsync(s => s.Id == request.StationId);

@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using System.Security.Cryptography;
 using System.Text;
@@ -356,11 +356,19 @@ public class KioskService : IKioskService
         if (booking.Locker == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin ô tủ của đơn đặt.");
 
-        // Check overdue
+        // Check overdue (Dynamic real-time calculation)
         var now = DateTime.UtcNow;
-        var graceEnd = booking.EndAt.AddMinutes(15);
-        if (now > graceEnd && booking.IsOverdue)
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var graceMinutes = policy?.GracePeriodMinutes ?? 15;
+        var graceEnd = booking.EndAt.AddMinutes(graceMinutes);
+
+        if (booking.IsOverdue || now > graceEnd)
         {
+            booking.IsOverdue = true;
+            if (booking.OverdueSince == null) booking.OverdueSince = graceEnd;
+            await _context.SaveChangesAsync();
+
+            var overdueFee = policy != null ? _pricingService.CalculateOverdueFee(booking, policy) : 20000m;
             return ApiResponse<KioskCheckOutResponse>.SuccessResponse(new KioskCheckOutResponse
             {
                 BookingId = booking.Id,
@@ -369,8 +377,8 @@ public class KioskService : IKioskService
                 LockerCode = booking.Locker.LockerCode,
                 LockerSize = booking.Locker.Size.ToString(),
                 IsOverdue = true,
-                OverdueFee = 20000, // standard overtime fee or calculated
-                Message = "Đơn của bạn đã quá hạn thuê. Vui lòng thanh toán phụ phí trước khi lấy đồ."
+                OverdueFee = overdueFee,
+                Message = $"Đơn của bạn đã quá hạn thuê. Phụ phí quá hạn hiện tại là {overdueFee:N0} VNĐ. Vui lòng thanh toán phụ phí trước khi lấy đồ."
             }, "Đơn đặt bị quá hạn.");
         }
 
