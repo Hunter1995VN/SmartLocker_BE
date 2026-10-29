@@ -29,6 +29,12 @@ public class UserRepository : IUserRepository
             u.Phone == phone && u.DeletedAt == null, ct);
     }
 
+    public async Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default)
+    {
+        return await _db.Users.FirstOrDefaultAsync(u =>
+            u.GoogleId == googleId && u.DeletedAt == null, ct);
+    }
+
     public async Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         return await _db.Users.FirstOrDefaultAsync(u =>
@@ -49,6 +55,11 @@ public class UserRepository : IUserRepository
             u.Phone == phone &&
             u.DeletedAt == null &&
             u.Status != UserStatus.PENDING_VERIFICATION, ct);
+    }
+
+    public async Task<bool> AnyPhoneInDbAsync(string phone, CancellationToken ct = default)
+    {
+        return await _db.Users.AnyAsync(u => u.Phone == phone, ct);
     }
 
     public async Task RemoveUnverifiedByEmailOrPhoneAsync(string email, string phone, CancellationToken ct = default)

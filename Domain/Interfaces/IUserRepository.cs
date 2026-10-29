@@ -10,9 +10,11 @@ public interface IUserRepository
 {
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);
     Task<User?> GetByPhoneAsync(string phone, CancellationToken ct = default);
+    Task<User?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default);
     Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
     Task<bool> ExistsByPhoneAsync(string phone, CancellationToken ct = default);
+    Task<bool> AnyPhoneInDbAsync(string phone, CancellationToken ct = default);
     Task RemoveUnverifiedByEmailOrPhoneAsync(string email, string phone, CancellationToken ct = default);
     Task AddAsync(User user, CancellationToken ct = default);
     void Update(User user);

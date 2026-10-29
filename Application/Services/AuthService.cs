@@ -225,9 +225,9 @@ public class AuthService
         }
         catch (Exception ex)
         {
-            // Log lỗi để debug - trả về 500 có message rõ ràng
-            Console.WriteLine($"❌ [VerifyOtp ERROR] {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-            return Result<AuthResponse>.Failure("SERVER_ERROR", $"Lỗi server: {ex.Message}");
+            var detail = ex.InnerException?.Message ?? ex.Message;
+            Console.WriteLine($"❌ [VerifyOtp ERROR] {ex.GetType().Name}: {detail}\n{ex.StackTrace}");
+            return Result<AuthResponse>.Failure("SERVER_ERROR", $"Lỗi server: {detail}");
         }
     }
 
@@ -236,7 +236,7 @@ public class AuthService
     #region 2. ĐĂNG NHẬP
 
     /// <summary>
-    /// Đăng nhập bằng email + mật khẩu.
+    /// Đăng nhập bằng email (hoặc SĐT) + mật khẩu.
     /// </summary>
     public async Task<Result<AuthResponse>> LoginAsync(LoginRequest req, CancellationToken ct = default)
     {
@@ -244,9 +244,10 @@ public class AuthService
             return Result<AuthResponse>.Failure("INVALID_CREDENTIALS", "Email và mật khẩu là bắt buộc");
 
         var identifier = req.Email.ToLowerInvariant().Trim();
-        var user = await _users.GetByEmailAsync(identifier, ct);
+        var user = await _users.GetByEmailAsync(identifier, ct)
+                   ?? await _users.GetByPhoneAsync(req.Email.Trim(), ct);
 
-        if (user == null || !_hasher.Verify(req.Password, user.PasswordHash))
+        if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !_hasher.Verify(req.Password, user.PasswordHash))
             return Result<AuthResponse>.Failure("INVALID_CREDENTIALS", "Email hoặc mật khẩu không chính xác");
 
         if (user.Status == UserStatus.PENDING_VERIFICATION)
@@ -265,7 +266,7 @@ public class AuthService
             UserId = user.Id,
             FullName = user.FullName,
             Email = user.Email,
-            Phone = user.Phone,
+            Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
             Role = user.Role.ToString(),
             AccessToken = token,
             RefreshToken = _jwt.GenerateRefreshToken(),
@@ -360,7 +361,7 @@ public class AuthService
             UserId = user.Id,
             FullName = user.FullName,
             Email = user.Email,
-            Phone = user.Phone,
+            Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
             Role = user.Role.ToString(),
             AccessToken = token,
             RefreshToken = _jwt.GenerateRefreshToken(),
@@ -453,6 +454,28 @@ public class AuthService
     }
 
     /// <summary>
+    /// Sinh SĐT đại diện 10 chữ số duy nhất (bắt đầu bằng 00) cho tài khoản đăng ký qua Google OAuth
+    /// để không bị lỗi trùng UNIQUE KEY constraint uq_Users_Phone trong SQL Server khi nhiều user Google cùng có Phone rỗng.
+    /// </summary>
+    private async Task<string> GenerateUniqueGooglePhoneAsync(string googleId, CancellationToken ct)
+    {
+        using var sha = SHA256.Create();
+        var hashBytes = sha.ComputeHash(Encoding.UTF8.GetBytes(googleId));
+        var numeric = BitConverter.ToUInt32(hashBytes, 0) % 100_000_000u;
+        var candidate = $"00{numeric:D8}";
+
+        while (await _users.AnyPhoneInDbAsync(candidate, ct))
+        {
+            var randBytes = new byte[4];
+            RandomNumberGenerator.Fill(randBytes);
+            var randNum = BitConverter.ToUInt32(randBytes, 0) % 100_000_000u;
+            candidate = $"00{randNum:D8}";
+        }
+
+        return candidate;
+    }
+
+    /// <summary>
     /// Đăng nhập/Đăng ký bằng Google.
     /// Verify id_token → tìm/tạo user → cấp JWT.
     /// </summary>
@@ -468,20 +491,23 @@ public class AuthService
             var email = payload.Email.ToLowerInvariant().Trim();
             var googleId = payload.Subject; // Google unique user ID
 
-            // 2. Tìm user trong DB
-            var user = await _users.GetByEmailAsync(email, ct);
+            // 2. Tìm user trong DB theo Email hoặc GoogleId
+            var user = await _users.GetByEmailAsync(email, ct)
+                       ?? await _users.GetByGoogleIdAsync(googleId, ct);
 
             if (user == null)
             {
                 // 3a. Tạo user mới (đăng ký qua Google)
-                // Phone để trống vì Google không cung cấp SĐT — DB index có filter [Phone] <> '' nên không conflict
+                // Sinh SĐT đại diện 10 số duy nhất (00xxxxxxxx) vì bảng Users trên SQL Server có UNIQUE constraint trên cột Phone
+                var placeholderPhone = await GenerateUniqueGooglePhoneAsync(googleId, ct);
+
                 user = new User
                 {
                     Id = Guid.NewGuid(),
-                    FullName = payload.Name ?? email,
+                    FullName = string.IsNullOrWhiteSpace(payload.Name) ? email : payload.Name.Trim(),
                     Email = email,
-                    Phone = "",
-                    PasswordHash = "",
+                    Phone = placeholderPhone,
+                    PasswordHash = _hasher.Hash(Guid.NewGuid().ToString("N")),
                     GoogleId = googleId,
                     AvatarUrl = payload.Picture,
                     Role = UserRole.TRAVELER,
@@ -494,23 +520,27 @@ public class AuthService
             }
             else
             {
-                // 3b. Link Google ID vào tài khoản cũ nếu chưa có
-                if (string.IsNullOrEmpty(user.GoogleId))
-                {
-                    user.GoogleId = googleId;
-                    user.AvatarUrl ??= payload.Picture;
-                    _users.Update(user);
-                    await _users.SaveChangesAsync(ct);
-                }
-
                 // Nếu tài khoản bị khóa
                 if (user.Status == UserStatus.SUSPENDED || user.Status == UserStatus.DELETED)
                     return Result<AuthResponse>.Failure("ACCOUNT_LOCKED", "Tài khoản đang bị tạm khóa. Liên hệ hỗ trợ.");
 
-                // Kích hoạt nếu đang pending
+                // 3b. Link Google ID & kích hoạt nếu đang pending trong 1 lần SaveChanges duy nhất
+                var needUpdate = false;
+                if (string.IsNullOrEmpty(user.GoogleId))
+                {
+                    user.GoogleId = googleId;
+                    user.AvatarUrl ??= payload.Picture;
+                    needUpdate = true;
+                }
+
                 if (user.Status == UserStatus.PENDING_VERIFICATION)
                 {
                     user.Status = UserStatus.ACTIVE;
+                    needUpdate = true;
+                }
+
+                if (needUpdate)
+                {
                     _users.Update(user);
                     await _users.SaveChangesAsync(ct);
                 }
@@ -524,7 +554,7 @@ public class AuthService
                 UserId = user.Id,
                 FullName = user.FullName,
                 Email = user.Email,
-                Phone = user.Phone,
+                Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
                 Role = user.Role.ToString(),
                 AccessToken = token,
                 RefreshToken = _jwt.GenerateRefreshToken(),
@@ -533,8 +563,9 @@ public class AuthService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ [GoogleLogin ERROR] {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-            return Result<AuthResponse>.Failure("SERVER_ERROR", $"Lỗi server khi đăng nhập Google: {ex.Message}");
+            var detail = ex.InnerException?.Message ?? ex.Message;
+            Console.WriteLine($"❌ [GoogleLogin ERROR] {ex.GetType().Name}: {detail}\n{ex.StackTrace}");
+            return Result<AuthResponse>.Failure("SERVER_ERROR", $"Lỗi server khi đăng nhập Google: {detail}");
         }
     }
 
