@@ -12,6 +12,8 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
 {
     public SmartLockerDbContext(DbContextOptions<SmartLockerDbContext> options) : base(options) { }
 
+    public DbSet<LostItemReport> LostItemReports => Set<LostItemReport>();
+    public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<StationReview> StationReviews => Set<StationReview>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
@@ -33,6 +35,8 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.StationReviewConfiguration());
+        modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.LostItemReportConfiguration());
+        modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.NotificationConfiguration());
 
         // === Ánh xạ bảng Users ===
         modelBuilder.Entity<User>(entity =>
