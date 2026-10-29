@@ -46,13 +46,13 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(u => u.Role)
                 .IsRequired()
                 .HasMaxLength(20)
-                .HasConversion(v => v.ToString(), v => Enum.Parse<UserRole>(v))
+                .HasConversion(v => v.ToString(), v => Enum.Parse<UserRole>(v, true))
                 .HasDefaultValue(UserRole.TRAVELER);
 
             entity.Property(u => u.Status)
                 .IsRequired()
                 .HasMaxLength(30)
-                .HasConversion(v => v.ToString(), v => Enum.Parse<UserStatus>(v))
+                .HasConversion(v => v.ToString(), v => Enum.Parse<UserStatus>(v, true))
                 .HasDefaultValue(UserStatus.PENDING_VERIFICATION);
 
             entity.Property(u => u.OverdueDebt).HasColumnType("decimal(12,2)").HasDefaultValue(0m);
@@ -86,7 +86,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(s => s.Latitude).HasColumnType("decimal(10,8)");
             entity.Property(s => s.Longitude).HasColumnType("decimal(11,8)");
             entity.Property(s => s.Status)
-                .HasConversion(v => v.ToString(), v => Enum.Parse<StationStatus>(v));
+                .HasConversion(v => v.ToString(), v => Enum.Parse<StationStatus>(v, true));
         });
 
         // === Ánh xạ bảng Lockers ===
@@ -96,9 +96,9 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.HasKey(l => l.Id);
             entity.Property(l => l.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(l => l.LockerCode).IsRequired().HasMaxLength(50);
-            entity.Property(l => l.Size).HasConversion(v => v.ToString(), v => Enum.Parse<LockerSize>(v));
-            entity.Property(l => l.BusinessStatus).HasConversion(v => v.ToString(), v => Enum.Parse<LockerBusinessStatus>(v));
-            entity.Property(l => l.HealthStatus).HasConversion(v => v.ToString(), v => Enum.Parse<LockerHealthStatus>(v));
+            entity.Property(l => l.Size).HasConversion(v => v.ToString(), v => Enum.Parse<LockerSize>(v, true));
+            entity.Property(l => l.BusinessStatus).HasConversion(v => v.ToString(), v => Enum.Parse<LockerBusinessStatus>(v, true));
+            entity.Property(l => l.HealthStatus).HasConversion(v => v.ToString(), v => Enum.Parse<LockerHealthStatus>(v, true));
 
             entity.HasOne(l => l.Station)
                 .WithMany(s => s.Lockers)
@@ -114,7 +114,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(p => p.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(p => p.PricePerBlock).HasColumnType("decimal(12,2)");
             entity.Property(p => p.OverdueFeePerHour).HasColumnType("decimal(12,2)");
-            entity.Property(p => p.Size).HasConversion(v => v.ToString(), v => Enum.Parse<LockerSize>(v));
+            entity.Property(p => p.Size).HasConversion(v => v.ToString(), v => Enum.Parse<LockerSize>(v, true));
         });
 
         // === Ánh xạ bảng Bookings ===
@@ -125,8 +125,8 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(b => b.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(b => b.BookingCode).IsRequired().HasMaxLength(50);
             entity.Property(b => b.BaseAmount).HasColumnType("decimal(12,2)");
-            entity.Property(b => b.Size).HasConversion(v => v.ToString(), v => Enum.Parse<LockerSize>(v));
-            entity.Property(b => b.Status).HasConversion(v => v.ToString(), v => Enum.Parse<BookingStatus>(v));
+            entity.Property(b => b.Size).HasConversion(v => v.ToString(), v => Enum.Parse<LockerSize>(v, true));
+            entity.Property(b => b.Status).HasConversion(v => v.ToString(), v => Enum.Parse<BookingStatus>(v, true));
         });
 
         // === Ánh xạ bảng Payments ===
@@ -136,8 +136,8 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(p => p.Amount).HasColumnType("decimal(12,2)");
-            entity.Property(p => p.Kind).HasConversion(v => v.ToString(), v => Enum.Parse<PaymentKind>(v));
-            entity.Property(p => p.Status).HasConversion(v => v.ToString(), v => Enum.Parse<PaymentStatus>(v));
+            entity.Property(p => p.Kind).HasConversion(v => v.ToString(), v => Enum.Parse<PaymentKind>(v, true));
+            entity.Property(p => p.Status).HasConversion(v => v.ToString(), v => Enum.Parse<PaymentStatus>(v, true));
         });
 
         // === Ánh xạ bảng IoTDevices ===
@@ -162,8 +162,8 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.HasKey(i => i.Id);
             entity.Property(i => i.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(i => i.IncidentCode).IsRequired().HasMaxLength(50);
-            entity.Property(i => i.Type).HasConversion(v => v.ToString(), v => Enum.Parse<IncidentType>(v));
-            entity.Property(i => i.Status).HasConversion(v => v.ToString(), v => Enum.Parse<IncidentStatus>(v));
+            entity.Property(i => i.Type).HasConversion(v => v.ToString(), v => Enum.Parse<IncidentType>(v, true));
+            entity.Property(i => i.Status).HasConversion(v => v.ToString(), v => Enum.Parse<IncidentStatus>(v, true));
 
             entity.HasOne(i => i.ReportedByUser)
                 .WithMany()
@@ -183,7 +183,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.HasKey(m => m.Id);
             entity.Property(m => m.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(m => m.TicketCode).IsRequired().HasMaxLength(50);
-            entity.Property(m => m.Status).HasConversion(v => v.ToString(), v => Enum.Parse<MaintenanceStatus>(v));
+            entity.Property(m => m.Status).HasConversion(v => v.ToString(), v => Enum.Parse<MaintenanceStatus>(v, true));
 
             entity.HasOne(m => m.ReportedByUser)
                 .WithMany()
@@ -203,7 +203,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.HasKey(a => a.Id);
             entity.Property(a => a.Id).HasDefaultValueSql("newsequentialid()");
             entity.Property(a => a.RecordCode).IsRequired().HasMaxLength(50);
-            entity.Property(a => a.Status).HasConversion(v => v.ToString(), v => Enum.Parse<AbandonedPropertyStatus>(v));
+            entity.Property(a => a.Status).HasConversion(v => v.ToString(), v => Enum.Parse<AbandonedPropertyStatus>(v, true));
 
             entity.HasOne(a => a.StaffWitness)
                 .WithMany()
