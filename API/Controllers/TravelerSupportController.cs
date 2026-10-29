@@ -64,4 +64,29 @@ public class TravelerSupportController(ISmartLockerDbContext db) : ControllerBas
         grant.RevokedAt = DateTime.UtcNow; await db.SaveChangesAsync(); return NoContent();
     }
 
+    [HttpPost("lost-items")]
+    public async Task<IActionResult> ReportLost(Guid bookingId, LostRequest request)
+    {
+        var booking = await Owned(bookingId);
+        if (booking == null) return NotFound();
+        if (booking.Status != BookingStatus.COMPLETED || booking.CheckedOutAt == null || booking.CheckedOutAt < DateTime.UtcNow.AddDays(-7)
+            || string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 2000)
+            return BadRequest(new { message = "Báo quên đồ trong vòng 7 ngày sau lấy đồ, mô tả tối đa 2000 ký tự." });
+        if (request.Photo != null && (!request.Photo.StartsWith("data:image/jpeg;base64,") || request.Photo.Length > 700000))
+            return BadRequest(new { message = "Ảnh minh họa phải là JPEG, tối đa 500 KB." });
+        if (await db.LostItemReports.AnyAsync(x => x.BookingId == bookingId && x.Status == "OPEN"))
+            return Conflict(new { message = "Đã có yêu cầu tìm đồ đang chờ xử lý." });
+        var report = new LostItemReport { Id = Guid.NewGuid(), BookingId = bookingId, Description = request.Description.Trim(),
+            Photo = request.Photo, CreatedAt = DateTime.UtcNow };
+        db.LostItemReports.Add(report);
+        // Never seize a locker assigned to a subsequent customer.
+        if (booking.Locker is { BusinessStatus: LockerBusinessStatus.AVAILABLE } locker
+            && !await db.Bookings.AnyAsync(b => b.Id != bookingId && b.LockerId == locker.Id && (b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED)))
+        {
+            locker.BusinessStatus = LockerBusinessStatus.BLOCKED;
+            locker.Notes = "Lost item inspection: " + report.Id;
+        }
+        await db.SaveChangesAsync();
+        return Ok(new { report.Id, report.Status });
+    }
 }
