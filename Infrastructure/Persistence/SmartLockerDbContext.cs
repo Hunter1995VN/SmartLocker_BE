@@ -12,6 +12,10 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
 {
     public SmartLockerDbContext(DbContextOptions<SmartLockerDbContext> options) : base(options) { }
 
+    public DbSet<PickupDelegation> PickupDelegations => Set<PickupDelegation>();
+    public DbSet<StationReview> StationReviews => Set<StationReview>();
+    public DbSet<LostItemReport> LostItemReports => Set<LostItemReport>();
+    public DbSet<WalkInSession> WalkInSessions => Set<WalkInSession>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
     public DbSet<Station> Stations => Set<Station>();
@@ -30,6 +34,12 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        var support = new Infrastructure.Data.Configurations.TravelerSupportConfiguration();
+        modelBuilder.ApplyConfiguration<PickupDelegation>(support);
+        modelBuilder.ApplyConfiguration<StationReview>(support);
+        modelBuilder.ApplyConfiguration<LostItemReport>(support);
+        modelBuilder.ApplyConfiguration<WalkInSession>(support);
+
 
         // === Ánh xạ bảng Users ===
         modelBuilder.Entity<User>(entity =>
