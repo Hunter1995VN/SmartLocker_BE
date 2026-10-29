@@ -1,4 +1,4 @@
-﻿namespace Infrastructure.Services;
+namespace Infrastructure.Services;
 
 using Application.DTOs.Common;
 using Application.DTOs.Payment;
@@ -16,12 +16,18 @@ public class PaymentService : IPaymentService
 {
     private readonly ISmartLockerDbContext _context;
     private readonly IPaymentGatewayService _paymentGateway;
+    private readonly IOfflineTicketService _offlineTicketService;
     private readonly ILogger<PaymentService> _logger;
 
-    public PaymentService(ISmartLockerDbContext context, IPaymentGatewayService paymentGateway, ILogger<PaymentService> logger)
+    public PaymentService(
+        ISmartLockerDbContext context,
+        IPaymentGatewayService paymentGateway,
+        IOfflineTicketService offlineTicketService,
+        ILogger<PaymentService> logger)
     {
         _context = context;
         _paymentGateway = paymentGateway;
+        _offlineTicketService = offlineTicketService;
         _logger = logger;
     }
 
@@ -31,19 +37,19 @@ public class PaymentService : IPaymentService
         {
             Webhook? webhook = webhookData as Webhook;
             if (webhook == null)
-                return ApiResponse<PaymentResultDto>.ErrorResponse("Dá»¯ liá»‡u webhook khÃ´ng há»£p lá»‡.");
+                return ApiResponse<PaymentResultDto>.ErrorResponse("Dữ liệu webhook không hợp lệ.");
 
             var (orderCode, isSuccess) = await _paymentGateway.VerifyWebhookAsync(webhook);
 
             if (orderCode == 0)
-                return ApiResponse<PaymentResultDto>.ErrorResponse("KhÃ´ng thá»ƒ xÃ¡c thá»±c webhook.");
+                return ApiResponse<PaymentResultDto>.ErrorResponse("Không thể xác thực webhook.");
 
             var payment = await _context.Payments
                 .Include(p => p.Booking)
                 .FirstOrDefaultAsync(p => p.OrderCode == orderCode.ToString());
 
             if (payment == null)
-                return ApiResponse<PaymentResultDto>.ErrorResponse($"KhÃ´ng tÃ¬m tháº¥y giao dá»‹ch OrderCode={orderCode}.");
+                return ApiResponse<PaymentResultDto>.ErrorResponse($"Không tìm thấy giao dịch OrderCode={orderCode}.");
 
             // Idempotent check
             if (payment.Status == PaymentStatus.PAID)
@@ -55,7 +61,7 @@ public class PaymentService : IPaymentService
                     OrderCode = payment.OrderCode,
                     Status = payment.Status.ToString(),
                     IsSuccess = true,
-                    Message = "Giao dá»‹ch Ä‘Ã£ Ä‘Æ°á»£c xá»­ lÃ½ trÆ°á»›c Ä‘Ã³."
+                    Message = "Giao dịch đã được xử lý trước đó."
                 });
             }
 
@@ -78,13 +84,13 @@ public class PaymentService : IPaymentService
                 Amount = payment.Amount,
                 Status = payment.Status.ToString(),
                 IsSuccess = payment.Status == PaymentStatus.PAID,
-                Message = payment.Status == PaymentStatus.PAID ? "Thanh toÃ¡n thÃ nh cÃ´ng" : "Thanh toÃ¡n tháº¥t báº¡i"
+                Message = payment.Status == PaymentStatus.PAID ? "Thanh toán thành công" : "Thanh toán thất bại"
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing PayOS webhook");
-            return ApiResponse<PaymentResultDto>.ErrorResponse("Lá»—i xá»­ lÃ½ webhook.");
+            return ApiResponse<PaymentResultDto>.ErrorResponse("Lỗi xử lý webhook.");
         }
     }
 
@@ -95,7 +101,7 @@ public class PaymentService : IPaymentService
             .FirstOrDefaultAsync(p => p.OrderCode == orderCode.ToString());
 
         if (payment == null)
-            return ApiResponse<PaymentResultDto>.ErrorResponse("KhÃ´ng tÃ¬m tháº¥y giao dá»‹ch.");
+            return ApiResponse<PaymentResultDto>.ErrorResponse("Không tìm thấy giao dịch.");
 
         return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
         {
@@ -106,7 +112,7 @@ public class PaymentService : IPaymentService
             Amount = payment.Amount,
             Status = payment.Status.ToString(),
             IsSuccess = payment.Status == PaymentStatus.PAID,
-            Message = payment.Status == PaymentStatus.PAID ? "Thanh toÃ¡n thÃ nh cÃ´ng" : "Äang chá» xÃ¡c nháº­n"
+            Message = payment.Status == PaymentStatus.PAID ? "Thanh toán thành công" : "Đang chờ xác nhận"
         });
     }
 
@@ -114,7 +120,7 @@ public class PaymentService : IPaymentService
     {
         var payment = await _context.Payments.FindAsync(paymentId);
         if (payment == null)
-            return ApiResponse<PaymentDto>.ErrorResponse("KhÃ´ng tÃ¬m tháº¥y giao dá»‹ch.");
+            return ApiResponse<PaymentDto>.ErrorResponse("Không tìm thấy giao dịch.");
 
         return ApiResponse<PaymentDto>.SuccessResponse(new PaymentDto
         {
@@ -135,7 +141,7 @@ public class PaymentService : IPaymentService
     }
 
     /// <summary>
-    /// Chá»§ Ä‘á»™ng Ä‘á»‘i soÃ¡t trá»±c tiáº¿p vá»›i PayOS vÃ  cáº­p nháº­t DB náº¿u Ä‘Ã£ thanh toÃ¡n
+    /// Chủ động đối soát trực tiếp với PayOS và cập nhật DB nếu đã thanh toán
     /// </summary>
     public async Task<ApiResponse<PaymentResultDto>> SyncPaymentStatusAsync(long orderCode)
     {
@@ -144,7 +150,7 @@ public class PaymentService : IPaymentService
             .FirstOrDefaultAsync(p => p.OrderCode == orderCode.ToString());
 
         if (payment == null)
-            return ApiResponse<PaymentResultDto>.ErrorResponse($"KhÃ´ng tÃ¬m tháº¥y giao dá»‹ch OrderCode={orderCode}.");
+            return ApiResponse<PaymentResultDto>.ErrorResponse($"Không tìm thấy giao dịch OrderCode={orderCode}.");
 
         if (payment.Status == PaymentStatus.PAID)
         {
@@ -157,11 +163,11 @@ public class PaymentService : IPaymentService
                 Amount = payment.Amount,
                 Status = payment.Status.ToString(),
                 IsSuccess = true,
-                Message = "Giao dá»‹ch Ä‘Ã£ Ä‘Æ°á»£c thanh toÃ¡n thÃ nh cÃ´ng."
+                Message = "Giao dịch đã được thanh toán thành công."
             });
         }
 
-        // Gá»i trá»±c tiáº¿p PayOS API Ä‘á»ƒ Ä‘á»‘i soÃ¡t tráº¡ng thÃ¡i thá»±c táº¿
+        // Gọi trực tiếp PayOS API để đối soát trạng thái thực tế
         var payosStatus = await _paymentGateway.GetPaymentStatusAsync(orderCode);
         _logger.LogInformation("SyncPaymentStatusAsync for OrderCode={OrderCode}: PayOS status={Status}", orderCode, payosStatus);
 
@@ -179,7 +185,7 @@ public class PaymentService : IPaymentService
                 Amount = payment.Amount,
                 Status = payment.Status.ToString(),
                 IsSuccess = true,
-                Message = "XÃ¡c nháº­n thanh toÃ¡n thÃ nh cÃ´ng tá»« cá»•ng PayOS!"
+                Message = "Xác nhận thanh toán thành công từ cổng PayOS!"
             });
         }
 
@@ -192,7 +198,7 @@ public class PaymentService : IPaymentService
             Amount = payment.Amount,
             Status = payment.Status.ToString(),
             IsSuccess = false,
-            Message = $"Giao dá»‹ch Ä‘ang á»Ÿ tráº¡ng thÃ¡i {payosStatus ?? "PENDING"} trÃªn cá»•ng PayOS."
+            Message = $"Giao dịch đang ở trạng thái {payosStatus ?? "PENDING"} trên cổng PayOS."
         });
     }
 
@@ -209,36 +215,34 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.Status = BookingStatus.CONFIRMED;
 
-            // Chuáº©n hÃ³a mÃ£ PIN má»Ÿ tá»§ thÃ nh 6 chá»¯ sá»‘ an toÃ n (100000 - 999999)
+            // Chuẩn hóa mã PIN mở tủ thành 6 chữ số an toàn (100000 - 999999)
             var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
             using var sha256 = SHA256.Create();
             var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
             var hashString = Convert.ToBase64String(hashBytes);
 
-            var qrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                JsonSerializer.Serialize(new
-                {
-                    bookingId = payment.BookingId,
-                    bookingCode = payment.Booking.BookingCode,
-                    stationId = payment.Booking.StationId,
-                    accessCode = randomCode,
-                    nonce = Guid.NewGuid().ToString("N"),
-                    expiresAt = payment.Booking.EndAt
-                })));
+            var offlineNonce = Guid.NewGuid().ToString("N");
+            var offlineExpiresAt = payment.Booking.EndAt > DateTime.UtcNow
+                ? payment.Booking.EndAt.AddHours(24)
+                : DateTime.UtcNow.AddHours(24);
+
+            var hmacToken = _offlineTicketService.GenerateHmacToken(payment.Booking, randomCode, offlineExpiresAt, offlineNonce);
 
             _context.AccessCredentials.Add(new AccessCredential
             {
                 BookingId = payment.BookingId,
-                QrPayload = qrPayload,
-                QrNonce = Guid.NewGuid().ToString("N"),
-                QrExpiresAt = payment.Booking.EndAt,
+                QrPayload = hmacToken,
+                QrNonce = offlineNonce,
+                QrExpiresAt = offlineExpiresAt,
                 AccessCodeHash = hashString,
-                OfflinePayload = randomCode,
+                OfflinePayload = hmacToken,
+                OfflineNonce = offlineNonce,
+                OfflineExpiresAt = offlineExpiresAt,
                 IsActive = true,
                 IssuedAt = DateTime.UtcNow
             });
 
-            _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}",
+            _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}, OfflineHMAC generated",
                 payment.Booking.BookingCode, randomCode);
         }
         else if (payment.Kind == PaymentKind.EXTENSION)
@@ -255,12 +259,12 @@ public class PaymentService : IPaymentService
                         payment.Booking.EndAt = newEndAt;
                         payment.Booking.IsOverdue = false;
                         payment.Booking.OverdueSince = null;
-            var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
-            if (bookingUser != null && bookingUser.OverdueDebt > 0)
-            {
-                bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
-                bookingUser.UpdatedAt = DateTime.UtcNow;
-            }
+                        var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
+                        if (bookingUser != null && bookingUser.OverdueDebt > 0)
+                        {
+                            bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
+                            bookingUser.UpdatedAt = DateTime.UtcNow;
+                        }
                         payment.Booking.ExtensionCount++;
 
                         _context.BookingExtensions.Add(new BookingExtension
@@ -274,7 +278,20 @@ public class PaymentService : IPaymentService
 
                         var cred = await _context.AccessCredentials
                             .FirstOrDefaultAsync(ac => ac.BookingId == payment.BookingId && ac.IsActive);
-                        if (cred != null) cred.QrExpiresAt = newEndAt;
+                        if (cred != null)
+                        {
+                            var newExpires = newEndAt.AddHours(24);
+                            cred.QrExpiresAt = newExpires;
+                            cred.OfflineExpiresAt = newExpires;
+
+                            var pin = _offlineTicketService.ExtractPinFromCredential(cred);
+                            var nonce = Guid.NewGuid().ToString("N");
+                            var newHmac = _offlineTicketService.GenerateHmacToken(payment.Booking, pin, newExpires, nonce);
+                            cred.OfflinePayload = newHmac;
+                            cred.QrPayload = newHmac;
+                            cred.OfflineNonce = nonce;
+                            cred.QrNonce = nonce;
+                        }
                     }
                 }
                 catch (Exception ex) { _logger.LogError(ex, "Error parsing extension payload"); }

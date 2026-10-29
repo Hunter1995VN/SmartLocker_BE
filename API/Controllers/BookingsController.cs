@@ -12,10 +12,12 @@ using System.Security.Claims;
 public class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;
+    private readonly IOfflineTicketService _offlineTicketService;
 
-    public BookingsController(IBookingService bookingService)
+    public BookingsController(IBookingService bookingService, IOfflineTicketService offlineTicketService)
     {
         _bookingService = bookingService;
+        _offlineTicketService = offlineTicketService;
     }
 
     /// <summary>
@@ -61,6 +63,23 @@ public class BookingsController : ControllerBase
         var result = await _bookingService.GetBookingByIdAsync(userId, id);
         if (!result.Success)
             return NotFound(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy vé mở khóa ngoại tuyến có chữ ký HMAC-SHA256 (Offline HMAC Token)
+    /// </summary>
+    [HttpGet("{id:guid}/offline-ticket")]
+    public async Task<IActionResult> GetOfflineTicket(Guid id, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
+
+        var result = await _offlineTicketService.GetOfflineTicketAsync(userId, id, ct);
+        if (!result.Success)
+            return BadRequest(result);
 
         return Ok(result);
     }

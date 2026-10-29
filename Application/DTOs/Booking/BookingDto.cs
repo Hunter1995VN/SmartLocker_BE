@@ -33,6 +33,9 @@ public class BookingDto
     // Access credentials for Kiosk Check-in (UC-T04)
     public string? AccessCode { get; set; }
     public string? QrPayload { get; set; }
+    public string? OfflineHmacToken { get; set; }
+    public DateTime? OfflineExpiresAt { get; set; }
+    public bool IsOfflineReady { get; set; }
 
     // Derived fields (calculated at response time)
     public decimal? CurrentOverdueFee { get; set; }
