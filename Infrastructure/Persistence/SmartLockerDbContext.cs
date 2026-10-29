@@ -12,6 +12,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
 {
     public SmartLockerDbContext(DbContextOptions<SmartLockerDbContext> options) : base(options) { }
 
+    public DbSet<StationReview> StationReviews => Set<StationReview>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
     public DbSet<Station> Stations => Set<Station>();
@@ -31,6 +32,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.StationReviewConfiguration());
 
         // === Ánh xạ bảng Users ===
         modelBuilder.Entity<User>(entity =>

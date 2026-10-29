@@ -53,9 +53,14 @@ public class StationsController : ControllerBase
             })
             .ToListAsync();
 
+        var ratings = await _db.StationReviews.GroupBy(r => r.Booking.StationId)
+            .Select(g => new { StationId = g.Key, Average = g.Average(r => r.Stars), Count = g.Count() })
+            .ToDictionaryAsync(r => r.StationId);
         var stations = rawStations.Select(s => new StationListItemDto
         {
             Id = s.Id,
+            RatingAverage = ratings.TryGetValue(s.Id, out var rating) ? rating.Average : null,
+            RatingCount = ratings.TryGetValue(s.Id, out var ratingCount) ? ratingCount.Count : 0,
             Name = s.Name,
             Address = s.Address,
             Latitude = s.Latitude,
@@ -106,6 +111,11 @@ public class StationsController : ControllerBase
         };
 
         // Get pricing
+        var rating = await _db.StationReviews.Where(r => r.Booking.StationId == id).GroupBy(r => r.Booking.StationId)
+            .Select(g => new { Average = g.Average(r => r.Stars), Count = g.Count() }).FirstOrDefaultAsync();
+        dto.RatingAverage = rating?.Average;
+        dto.RatingCount = rating?.Count ?? 0;
+
         var policies = await _db.PricingPolicies.AsNoTracking()
             .Where(p => p.StationId == id && p.EffectiveTo == null)
             .ToListAsync();
