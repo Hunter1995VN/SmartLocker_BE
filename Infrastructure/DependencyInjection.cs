@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Domain.Interfaces;
@@ -10,7 +10,7 @@ using Infrastructure.Services;
 namespace SmartInfrastructure;
 
 /// <summary>
-/// Extension method Ä‘Äƒng kÃ½ cÃ¡c service Infrastructure vÃ o DI container.
+/// Extension method đăng ký các service Infrastructure vào DI container.
 /// </summary>
 public static class DependencyInjection
 {
@@ -22,7 +22,7 @@ public static class DependencyInjection
         services.AddScoped<Infrastructure.Mqtt.DoorEventHandler>();
         services.AddHostedService<Infrastructure.Mqtt.MqttSubscriberService>();
 
-        // 1. Káº¿t ná»‘i SQL Server â€” há»— trá»£ cáº£ DefaultConnection (Nhiá»‡m) vÃ  Default (QuÃ¢n)
+        // 1. Kết nối SQL Server — hỗ trợ cả DefaultConnection (Nhiệm) và Default (Quân)
         var connStr = config.GetConnectionString("DefaultConnection") 
             ?? config.GetConnectionString("Default")
             ?? "Server=localhost;Database=db65218;Trusted_Connection=True;TrustServerCertificate=True;";
@@ -34,7 +34,7 @@ public static class DependencyInjection
         services.Configure<SmtpSettings>(config.GetSection("SmtpSettings"));
         services.Configure<JwtSettings>(config.GetSection("JwtSettings"));
 
-        // 3. ÄÄƒng kÃ½ cÃ¡c service Auth (QuÃ¢n)
+        // 3. Đăng ký các service Auth (Quân) & Profile
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IOtpRepository, OtpRepository>();
         services.AddSingleton<IOtpGenerator, OtpGenerator>();
@@ -44,13 +44,14 @@ public static class DependencyInjection
         services.AddHttpClient<IGoogleAuthService, GoogleAuthService>();
         services.AddScoped<IUserProfileService, UserProfileService>();
 
-        // 4. ÄÄƒng kÃ½ cÃ¡c service Admin (PhÃ¢n há»‡ Quáº£n trá»‹ Váº­n hÃ nh)
+        // 4. Đăng ký các service Admin (Phân hệ Quản trị Vận hành & Đối soát)
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IAdminStationLockerService, AdminStationLockerService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IAdminIncidentService, AdminIncidentService>();
         services.AddScoped<IAdminAbandonedPropertyService, AdminAbandonedPropertyService>();
+        services.AddScoped<IAdminReconciliationService, AdminReconciliationService>();
 
         return services;
     }

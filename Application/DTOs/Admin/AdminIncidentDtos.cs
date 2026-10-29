@@ -17,6 +17,12 @@ public class RemoteUnlockRequest
     public string Reason { get; set; } = string.Empty; // Lý do cứu hộ khách hàng (VD: Khách quên mã, kẹt cửa)
 }
 
+public class UpdateIncidentStatusRequest
+{
+    public string Status { get; set; } = "RESOLVED"; // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
+    public string? ResolutionNote { get; set; }
+}
+
 public class IncidentDto
 {
     public Guid Id { get; set; }
