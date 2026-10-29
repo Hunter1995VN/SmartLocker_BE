@@ -471,6 +471,18 @@ public class AdminUserService : IAdminUserService
         },
         new()
         {
+            Code = "PROMOTION_VOUCHER_BUDGET",
+            Module = "Khuyến mại & Ngân sách (UC-A09)",
+            Name = "Thiết lập chiến dịch khuyến mại, mã Voucher & trần ngân sách chiết khấu",
+            Description = "Khởi tạo chiến dịch, phát hành mã giảm giá (%/VND), phân bổ ngân sách chiết khấu 3 tầng và cấu hình tự động ngắt khi chạm hạn mức.",
+            AdminAllowed = true,
+            StaffAllowed = false,
+            TravelerAllowed = false,
+            StaffScopeNote = "Chỉ xem thông tin chiến dịch & giả lập mã (Read-only)",
+            RiskLevel = "HIGH"
+        },
+        new()
+        {
             Code = "SECURITY_AUDIT_LOGS",
             Module = "An ninh & Truy vết (UC-A08)",
             Name = "Tra cứu nhật ký truy vết an ninh toàn hệ thống (Audit Logs)",

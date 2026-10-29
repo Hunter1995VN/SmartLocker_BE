@@ -4,6 +4,9 @@ public class CreateBookingResponse
 {
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
+    public decimal OriginalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public string? AppliedVoucherCode { get; set; }
     public decimal Amount { get; set; }
     public string PaymentUrl { get; set; } = string.Empty;
     public DateTime PaymentExpiresAt { get; set; }

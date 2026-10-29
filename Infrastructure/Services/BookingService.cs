@@ -1,4 +1,4 @@
-﻿namespace Infrastructure.Services;
+namespace Infrastructure.Services;
 
 using System.Collections.Concurrent;
 using Application.DTOs.Booking;
@@ -18,11 +18,17 @@ public class BookingService : IBookingService
     private readonly IPaymentGatewayService _paymentGateway;
     private readonly IPaymentService _paymentService;
     private readonly IOfflineTicketService _offlineTicketService;
+    private readonly IPromotionVoucherService? _promotionService;
     private readonly ILogger<BookingService> _logger;
 
-    public BookingService(ISmartLockerDbContext context, IPricingService pricingService,
-        IPaymentGatewayService paymentGateway, IPaymentService paymentService,
-        IOfflineTicketService offlineTicketService, ILogger<BookingService> logger)
+    public BookingService(
+        ISmartLockerDbContext context,
+        IPricingService pricingService,
+        IPaymentGatewayService paymentGateway,
+        IPaymentService paymentService,
+        IOfflineTicketService offlineTicketService,
+        ILogger<BookingService> logger,
+        IPromotionVoucherService? promotionService = null)
     {
         _context = context;
         _pricingService = pricingService;
@@ -30,10 +36,11 @@ public class BookingService : IBookingService
         _paymentService = paymentService;
         _offlineTicketService = offlineTicketService;
         _logger = logger;
+        _promotionService = promotionService;
     }
 
     /// <summary>
-    /// UC-T02: Tạo booking mới → tạo payment → trả link thanh toán PayOS
+    /// UC-T02: Tạo booking mới (kèm kiểm tra & khấu trừ ngân sách mã Voucher nếu có) → tạo payment → trả link thanh toán PayOS
     /// </summary>
     public async Task<ApiResponse<CreateBookingResponse>> CreateBookingAsync(Guid userId, CreateBookingRequest request)
     {
@@ -97,9 +104,12 @@ public class BookingService : IBookingService
                 if (totalLockers - activeCount <= 0)
                     return ApiResponse<CreateBookingResponse>.ErrorResponse("Không còn tủ trống cho kích thước này.");
 
-                // Generate booking
+                // Generate booking & base amount
                 var bookingCode = "BK-" + DateTime.UtcNow.ToString("yyyyMMdd") + "-" + new Random().Next(1000, 9999);
-                var amount = await _pricingService.CalculateBookingPriceAsync(request.StationId, lockerSize, request.StartAt, request.EndAt);
+                var originalAmount = await _pricingService.CalculateBookingPriceAsync(request.StationId, lockerSize, request.StartAt, request.EndAt);
+                var finalAmount = originalAmount;
+                var discountAmount = 0m;
+                string? appliedVoucherCode = null;
                 var expiresAt = DateTime.UtcNow.AddMinutes(10);
 
                 // PayOS orderCode phải là long — dùng timestamp + random
@@ -116,16 +126,41 @@ public class BookingService : IBookingService
                     StartAt = request.StartAt,
                     EndAt = request.EndAt,
                     PaymentExpiresAt = expiresAt,
-                    BaseAmount = amount
+                    BaseAmount = originalAmount
                 };
                 _context.Bookings.Add(booking);
+
+                // Áp dụng mã Voucher & kiểm soát ngân sách chiết khấu 3 tầng (nếu khách có chọn/nhập mã)
+                if (!string.IsNullOrWhiteSpace(request.VoucherCode) && _promotionService != null)
+                {
+                    var redeemRes = await _promotionService.RedeemVoucherForBookingAsync(
+                        userId,
+                        booking.Id,
+                        bookingCode,
+                        request.StationId,
+                        lockerSize.ToString(),
+                        originalAmount,
+                        request.VoucherCode);
+
+                    if (!redeemRes.Success || redeemRes.Data == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return ApiResponse<CreateBookingResponse>.ErrorResponse(
+                            redeemRes.Message ?? "Không thể áp dụng mã giảm giá cho đơn đặt tủ này.");
+                    }
+
+                    finalAmount = redeemRes.Data.FinalPayableAmount;
+                    discountAmount = redeemRes.Data.DiscountAmount;
+                    appliedVoucherCode = redeemRes.Data.Code;
+                    booking.BaseAmount = finalAmount;
+                }
 
                 var payment = new Payment
                 {
                     BookingId = booking.Id,
                     Kind = PaymentKind.BASE,
                     Status = PaymentStatus.PENDING,
-                    Amount = amount,
+                    Amount = finalAmount,
                     OrderCode = orderCode.ToString(),
                     ExpiresAt = expiresAt,
                     Gateway = "PAYOS"
@@ -135,7 +170,7 @@ public class BookingService : IBookingService
 
                 // Create PayOS payment link
                 var paymentResult = await _paymentGateway.CreatePaymentLinkAsync(
-                    orderCode, (int)amount, $"Dat tu {bookingCode}", "", "");
+                    orderCode, (int)finalAmount, $"Dat tu {bookingCode}", "", "");
 
                 payment.PaymentLink = paymentResult.CheckoutUrl;
                 payment.GatewayTxnId = paymentResult.PaymentLinkId;
@@ -147,7 +182,10 @@ public class BookingService : IBookingService
                 {
                     BookingId = booking.Id,
                     BookingCode = booking.BookingCode,
-                    Amount = amount,
+                    OriginalAmount = originalAmount,
+                    DiscountAmount = discountAmount,
+                    AppliedVoucherCode = appliedVoucherCode,
+                    Amount = finalAmount,
                     PaymentUrl = paymentResult.CheckoutUrl,
                     PaymentExpiresAt = expiresAt,
                     QrCode = paymentResult.QrCode,
@@ -155,7 +193,9 @@ public class BookingService : IBookingService
                     AccountName = paymentResult.AccountName,
                     Bin = paymentResult.Bin,
                     OrderCode = orderCode
-                }, "Tạo đặt tủ thành công. Vui lòng thanh toán trong 10 phút.");
+                }, appliedVoucherCode != null
+                    ? $"Tạo đặt tủ thành công (đã áp mã {appliedVoucherCode} giảm {discountAmount:N0}đ). Vui lòng thanh toán trong 10 phút."
+                    : "Tạo đặt tủ thành công. Vui lòng thanh toán trong 10 phút.");
             }
             catch (Exception ex)
             {
@@ -302,8 +342,6 @@ public class BookingService : IBookingService
             if (booking.Status != BookingStatus.STORED) return ApiResponse<CreateBookingResponse>.ErrorResponse("Chỉ có thể gia hạn khi đang gửi đồ (trạng thái STORED).");
             if (request.NewEndAt <= booking.EndAt) return ApiResponse<CreateBookingResponse>.ErrorResponse("Thời gian gia hạn phải lớn hơn thời gian kết thúc hiện tại.");
 
-            // TC_BKO_20: Kiểm tra xem đã có giao dịch gia hạn PENDING nào được tạo gần đây không (trong vòng 15 phút)
-            // Nếu có, tái sử dụng link cũ thay vì tạo 2 link PayOS trùng lặp
             var existingPendingPayment = await _context.Payments
                 .Where(p => p.BookingId == booking.Id 
                          && p.Kind == PaymentKind.EXTENSION 
@@ -378,7 +416,7 @@ public class BookingService : IBookingService
     }
 
     /// <summary>
-    /// UC-T08: Hủy booking + tính hoàn tiền theo BR-T06
+    /// UC-T08: Hủy booking + tính hoàn tiền theo BR-T06 + hoàn trả lượt Voucher nếu hủy trước khi sử dụng
     /// </summary>
     public async Task<ApiResponse<BookingDto>> CancelBookingAsync(Guid userId, Guid bookingId, CancelBookingRequest request)
     {
@@ -387,6 +425,8 @@ public class BookingService : IBookingService
         if (booking.UserId != userId) return ApiResponse<BookingDto>.ErrorResponse("Không có quyền.");
         if (booking.Status != BookingStatus.PENDING_PAYMENT && booking.Status != BookingStatus.CONFIRMED)
             return ApiResponse<BookingDto>.ErrorResponse("Không thể hủy đặt tủ ở trạng thái hiện tại. Chỉ hủy được khi PENDING_PAYMENT hoặc CONFIRMED.");
+
+        var wasPendingPayment = booking.Status == BookingStatus.PENDING_PAYMENT;
 
         if (booking.PricingPolicy == null && booking.PricingPolicyId != null)
             booking.PricingPolicy = await _context.PricingPolicies.FindAsync(booking.PricingPolicyId);
@@ -422,12 +462,17 @@ public class BookingService : IBookingService
         foreach (var p in pendingPayments)
         {
             p.Status = PaymentStatus.EXPIRED;
-            // Also cancel PayOS payment link if exists
             if (long.TryParse(p.OrderCode, out var code))
                 await _paymentGateway.CancelPaymentLinkAsync(code, "Booking cancelled");
         }
 
         await _context.SaveChangesAsync();
+
+        // Hoàn trả lượt dùng & ngân sách Voucher nếu đơn chưa thanh toán hoặc hủy hoàn tiền 100%
+        if (_promotionService != null && (wasPendingPayment || booking.CancelPolicyRate == 1.00m))
+        {
+            await _promotionService.ReleaseVoucherForBookingAsync(booking.Id, "Khách hàng hủy đơn đặt tủ");
+        }
 
         return await GetBookingByIdAsync(userId, bookingId);
     }
@@ -517,11 +562,6 @@ public class BookingService : IBookingService
 
     /// <summary>
     /// UC-T04 / Check-in: Khách đến trạm mở tủ nhận chỗ.
-    /// Bắt đầu tính giờ đặt tủ thực tế:
-    /// - StartAt = CheckedInAt (thời điểm nhận tủ)
-    /// - EndAt = StartAt + Duration
-    /// - Gán ô tủ vật lý khả dụng (Assign-late BR-A04)
-    /// - Status -> STORED
     /// </summary>
     public async Task<ApiResponse<BookingDto>> CheckInBookingAsync(Guid userId, Guid bookingId)
     {
@@ -538,14 +578,12 @@ public class BookingService : IBookingService
         if (booking.UserId != userId)
             return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền thực hiện thao tác trên đơn này.");
 
-        // Nếu đã check-in rồi, trả về luôn thông tin
         if (booking.Status == BookingStatus.STORED)
             return ApiResponse<BookingDto>.SuccessResponse(MapToBookingDto(booking), "Tủ đã được mở và đang trong quá trình lưu trữ.");
 
         if (booking.Status != BookingStatus.CONFIRMED)
             return ApiResponse<BookingDto>.ErrorResponse($"Không thể nhận tủ ở trạng thái hiện tại ({booking.Status}). Chỉ nhận tủ khi đơn ở trạng thái CONFIRMED.");
 
-        // Kiểm tra thời gian giữ chỗ 30 phút
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
         var confirmedAt = basePayment?.PaidAt ?? booking.CreatedAt;
         var holdExpiresAt = confirmedAt.AddMinutes(30);
@@ -558,7 +596,6 @@ public class BookingService : IBookingService
             return ApiResponse<BookingDto>.ErrorResponse("Đã quá 30 phút giữ chỗ. Đơn đặt tủ đã hết hạn (No-show).");
         }
 
-        // Tính duration khách đã đặt trước đó
         var durationHours = (booking.EndAt - booking.StartAt).TotalHours;
         if (durationHours <= 0) durationHours = 1;
 
@@ -569,7 +606,6 @@ public class BookingService : IBookingService
         booking.Status = BookingStatus.STORED;
         booking.UpdatedAt = now;
 
-        // Cấp ô tủ vật lý nếu chưa gán (Assign-late BR-A04)
         if (booking.LockerId == null)
         {
             var availableLocker = await _context.Lockers
@@ -592,7 +628,6 @@ public class BookingService : IBookingService
             booking.Locker.UpdatedAt = now;
         }
 
-        // Cập nhật QrExpiresAt cho AccessCredential
         if (booking.AccessCredential != null)
         {
             booking.AccessCredential.QrExpiresAt = booking.EndAt;
@@ -607,9 +642,6 @@ public class BookingService : IBookingService
 
     /// <summary>
     /// Check-out: Khách mở tủ lấy đồ và hoàn tất lưu trữ
-    /// - CheckedOutAt = now
-    /// - Status -> COMPLETED
-    /// - Locker -> AVAILABLE
     /// </summary>
     public async Task<ApiResponse<BookingDto>> CheckOutBookingAsync(Guid userId, Guid bookingId)
     {
@@ -655,8 +687,6 @@ public class BookingService : IBookingService
 
         return ApiResponse<BookingDto>.SuccessResponse(MapToBookingDto(booking), "Trả tủ thành công. Cảm ơn bạn đã sử dụng dịch vụ!");
     }
-
-    // === Private helpers ===
 
     private BookingDto MapToBookingDto(Booking booking)
     {
