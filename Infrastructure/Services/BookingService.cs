@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using System.Collections.Concurrent;
 using Application.DTOs.Booking;
@@ -199,6 +199,15 @@ public class BookingService : IBookingService
                         .FirstOrDefaultAsync(b => b.Id == bookingId) ?? booking;
                 }
             }
+        }
+
+        // UC-T09: Dynamic QR rotation - tự động làm mới mã QR động khi vé đã hết hạn (60s window)
+        if (booking.Status is BookingStatus.CONFIRMED or BookingStatus.STORED
+            && booking.AccessCredential is { IsActive: true, RevokedAt: null } credential
+            && credential.QrExpiresAt <= DateTime.UtcNow)
+        {
+            OnlineTicket.Rotate(credential, booking.StationId, DateTime.UtcNow);
+            await _context.SaveChangesAsync();
         }
 
         var dto = MapToBookingDto(booking);

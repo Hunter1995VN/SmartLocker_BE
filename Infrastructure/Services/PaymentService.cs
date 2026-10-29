@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using Application.DTOs.Common;
 using Application.DTOs.Payment;
@@ -209,34 +209,20 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.Status = BookingStatus.CONFIRMED;
 
-            // Chuẩn hóa mã PIN mở tủ thành 6 chữ số an toàn (100000 - 999999)
-            var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-            using var sha256 = SHA256.Create();
-            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
-            var hashString = Convert.ToBase64String(hashBytes);
+            // UC-T09: Chuẩn hóa mã PIN mở tủ 8 chữ số và tạo Dynamic QR token xoay vòng
+            var randomCode = RandomNumberGenerator.GetInt32(0, 100000000).ToString("D8");
+            var hashString = OnlineTicket.HashPin(randomCode);
 
-            var qrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                JsonSerializer.Serialize(new
-                {
-                    bookingId = payment.BookingId,
-                    bookingCode = payment.Booking.BookingCode,
-                    stationId = payment.Booking.StationId,
-                    accessCode = randomCode,
-                    nonce = Guid.NewGuid().ToString("N"),
-                    expiresAt = payment.Booking.EndAt
-                })));
-
-            _context.AccessCredentials.Add(new AccessCredential
+            var credential = new AccessCredential
             {
                 BookingId = payment.BookingId,
-                QrPayload = qrPayload,
-                QrNonce = Guid.NewGuid().ToString("N"),
-                QrExpiresAt = payment.Booking.EndAt,
                 AccessCodeHash = hashString,
                 OfflinePayload = randomCode,
                 IsActive = true,
                 IssuedAt = DateTime.UtcNow
-            });
+            };
+            OnlineTicket.Rotate(credential, payment.Booking.StationId, DateTime.UtcNow);
+            _context.AccessCredentials.Add(credential);
 
             _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}",
                 payment.Booking.BookingCode, randomCode);
