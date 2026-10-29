@@ -32,7 +32,7 @@ public class EmailOtpSender : IOtpSender
     private readonly IOtpGenerator _generator;
 
     public EmailOtpSender(
-        IOptions<SmtpSettings> settings,
+        IOptionsSnapshot<SmtpSettings> settings,
         ILogger<EmailOtpSender> logger,
         IOtpGenerator generator)
     {
@@ -43,18 +43,25 @@ public class EmailOtpSender : IOtpSender
 
     public async Task SendAsync(string destination, string code, CancellationToken ct = default)
     {
-        // Trong môi trường dev nếu chưa cấu hình SMTP thật, log OTP ra console để test
-        if (string.IsNullOrEmpty(_settings.Username) || _settings.Username == "REPLACE_ME")
+        if (string.IsNullOrWhiteSpace(_settings.Username) ||
+            string.IsNullOrWhiteSpace(_settings.Password) ||
+            _settings.Username == "REPLACE_ME" ||
+            _settings.Password == "your-app-password")
         {
-            _logger.LogWarning("⚠️ [DEV MODE] Mã OTP {Code} sẽ được gửi tới {Destination}. Cấu hình SmtpSettings.Username/Password trong appsettings.json để gửi qua email thật.", code, destination);
-            Console.WriteLine($"╔══════════════════════════════════════════╗\n║  OTP for {destination,-30}  ║\n║         → Mã xác thực: {code}            ║\n╚══════════════════════════════════════════╝");
-            return;
+            _logger.LogError("❌ Chưa cấu hình SmtpSettings.Username hoặc SmtpSettings.Password trong appsettings.json nên không thể gửi OTP tới {Destination}.", destination);
+            throw new InvalidOperationException("Chưa cấu hình tài khoản Gmail SMTP (Username/Password) trên Backend.");
         }
 
         try
         {
+            var fromEmail = string.IsNullOrWhiteSpace(_settings.FromEmail) || _settings.FromEmail == "no-reply@smartlocker.vn"
+                ? _settings.Username.Trim()
+                : _settings.FromEmail.Trim();
+
+            var appPassword = _settings.Password.Replace(" ", "");
+
             var email = new MimeMessage();
-            email.From.Add(new MailboxAddress(_settings.FromName, _settings.FromEmail));
+            email.From.Add(new MailboxAddress(_settings.FromName, fromEmail));
             email.To.Add(MailboxAddress.Parse(destination));
             email.Subject = "[SmartLocker] Mã xác thực OTP của bạn";
 
@@ -66,7 +73,7 @@ public class EmailOtpSender : IOtpSender
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(_settings.Host, _settings.Port, MailKit.Security.SecureSocketOptions.StartTls, ct);
-            await smtp.AuthenticateAsync(_settings.Username, _settings.Password, ct);
+            await smtp.AuthenticateAsync(_settings.Username.Trim(), appPassword, ct);
             await smtp.SendAsync(email, ct);
             await smtp.DisconnectAsync(true, ct);
 

@@ -1,9 +1,10 @@
-using Domain.Enums;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Application.DTOs;
 using Application.DTOs.Auth;
 using Domain.Entities;
+using Domain.Enums;
 using Domain.Interfaces;
 
 namespace Application.Services;
@@ -21,6 +22,22 @@ public class AuthService
     private readonly IOtpSender _otpSender;
     private readonly IJwtTokenService _jwt;
     private readonly IGoogleAuthService _googleAuthService;
+
+    /// <summary>
+    /// Lưu tạm thông tin đăng ký khi chưa xác thực OTP để KHÔNG ghi tài khoản chưa kích hoạt vào bảng Users.
+    /// Chỉ khi người dùng xác thực OTP thành công ở VerifyOtpAsync thì tài khoản mới được tạo trong Database.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, PendingRegistration> _pendingRegistrations =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed class PendingRegistration
+    {
+        public string FullName { get; init; } = string.Empty;
+        public string Email { get; init; } = string.Empty;
+        public string Phone { get; init; } = string.Empty;
+        public string PasswordHash { get; init; } = string.Empty;
+        public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+    }
 
     public AuthService(
         IUserRepository users,
@@ -43,21 +60,22 @@ public class AuthService
     #region 1. ĐĂNG KÝ
 
     /// <summary>
-    /// Bước 1 - Tạo tài khoản và gửi OTP về email để xác thực.
+    /// Bước 1 - Kiểm tra thông tin và gửi OTP về email để xác thực.
+    /// Chưa lưu User vào bảng Users cho đến khi VerifyOtp thành công.
     /// </summary>
     public async Task<Result<OtpSentResponse>> RegisterInitiateAsync(RegisterRequest req, CancellationToken ct = default)
     {
         // 1. Validate cơ bản
-        if (string.IsNullOrWhiteSpace(req.FullName) || req.FullName.Length < 2)
+        if (string.IsNullOrWhiteSpace(req.FullName) || req.FullName.Trim().Length < 2)
             return Result<OtpSentResponse>.Failure("INVALID_NAME", "Vui lòng nhập họ và tên hợp lệ");
 
-        if (!req.Email.Contains("@") || !req.Email.Contains("."))
+        if (string.IsNullOrWhiteSpace(req.Email) || !req.Email.Contains("@") || !req.Email.Contains("."))
             return Result<OtpSentResponse>.Failure("INVALID_EMAIL", "Email không đúng định dạng");
 
-        if (req.Phone.Length < 10 || req.Phone.Length > 11)
+        if (string.IsNullOrWhiteSpace(req.Phone) || req.Phone.Trim().Length < 10 || req.Phone.Trim().Length > 11)
             return Result<OtpSentResponse>.Failure("INVALID_PHONE", "Số điện thoại phải có 10-11 số");
 
-        if (req.Password.Length < 8)
+        if (string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 8)
             return Result<OtpSentResponse>.Failure("WEAK_PASSWORD", "Mật khẩu phải có ít nhất 8 ký tự");
 
         if (req.Password != req.ConfirmPassword)
@@ -66,43 +84,39 @@ public class AuthService
         if (!req.AgreeTerms)
             return Result<OtpSentResponse>.Failure("TERMS_NOT_AGREED", "Bạn cần đồng ý với điều khoản dịch vụ");
 
-        // 2. Check trùng email & phone
-        if (await _users.ExistsByEmailAsync(req.Email, ct))
+        var email = req.Email.Trim().ToLowerInvariant();
+        var phone = req.Phone.Trim();
+
+        // 2. Dọn dẹp các bản ghi User cũ bị kẹt ở trạng thái PENDING_VERIFICATION (chưa xác thực OTP) nếu có
+        await _users.RemoveUnverifiedByEmailOrPhoneAsync(email, phone, ct);
+
+        // 3. Check trùng email & phone với các tài khoản ĐÃ xác thực
+        if (await _users.ExistsByEmailAsync(email, ct))
             return Result<OtpSentResponse>.Failure("EMAIL_EXISTS", "Email này đã được đăng ký");
 
-        if (await _users.ExistsByPhoneAsync(req.Phone, ct))
+        if (await _users.ExistsByPhoneAsync(phone, ct))
             return Result<OtpSentResponse>.Failure("PHONE_EXISTS", "Số điện thoại này đã được đăng ký");
 
-        // 3. Hash mật khẩu
-        var passwordHash = _hasher.Hash(req.Password);
-
-        // 4. Tạo user với trạng thái PendingVerification (chưa kích hoạt)
-        var user = new User
-        {
-            Id = Guid.NewGuid(), // Gán Id trước để UserId của OTP không bị null
-            FullName = req.FullName.Trim(),
-            Email = req.Email.ToLowerInvariant().Trim(),
-            Phone = req.Phone.Trim(),
-            PasswordHash = passwordHash,
-            Role = UserRole.TRAVELER,
-            Status = UserStatus.PENDING_VERIFICATION,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-        await _users.AddAsync(user, ct);
-        // Lưu user TRƯỚC để FK constraint của OtpCode (UserId) được thỏa mãn
-        await _users.SaveChangesAsync(ct);
-
-        // 5. Sinh mã OTP, hash & lưu DB
+        // 4. Sinh mã OTP, gửi email TRƯỚC rồi mới lưu mã OTP (không tạo User trong DB ở bước này)
         var plainCode = _otpGenerator.Generate();
-        var result = await SaveAndSendOtpAsync(req.Email, plainCode, "Register", ct, userId: user.Id);
+        var result = await SaveAndSendOtpAsync(email, plainCode, "Register", ct, userId: null);
 
         if (!result.IsSuccess)
             return Result<OtpSentResponse>.Failure(result.ErrorCode!, result.ErrorMessage!);
 
+        // 5. Lưu tạm thông tin đăng ký vào bộ nhớ chờ xác thực OTP
+        _pendingRegistrations[email] = new PendingRegistration
+        {
+            FullName = req.FullName.Trim(),
+            Email = email,
+            Phone = phone,
+            PasswordHash = _hasher.Hash(req.Password),
+            CreatedAt = DateTime.UtcNow
+        };
+
         return Result<OtpSentResponse>.Success(new OtpSentResponse
         {
-            Email = req.Email,
+            Email = email,
             Purpose = "Register",
             ExpiresAt = DateTime.UtcNow.AddMinutes(5),
             ResendCountdown = 60
@@ -110,7 +124,7 @@ public class AuthService
     }
 
     /// <summary>
-    /// Bước 2 - Verify OTP. Nếu đúng → kích hoạt tài khoản + cấp JWT.
+    /// Bước 2 - Verify OTP. Nếu đúng → tạo/kích hoạt tài khoản trong DB + cấp JWT.
     /// </summary>
     public async Task<Result<AuthResponse>> VerifyOtpAsync(VerifyOtpRequest req, CancellationToken ct = default)
     {
@@ -135,7 +149,7 @@ public class AuthService
             }
 
             // 3. So sánh hash (không so sánh plaintext)
-            var inputHash = HashOtp(req.Code);
+            var inputHash = HashOtp(req.Code.Trim());
             if (inputHash != otp.CodeHash)
             {
                 otp.Attempts += 1;
@@ -145,26 +159,56 @@ public class AuthService
                 return Result<AuthResponse>.Failure("OTP_WRONG", $"Mã OTP không chính xác. Bạn còn {remaining} lần thử.");
             }
 
-            // 4. Đánh dấu OTP đã dùng
+            // 4. Tìm hoặc tạo user sau khi đã xác thực OTP thành công
+            var user = await _users.GetByEmailAsync(identifier, ct);
+            if (user == null)
+            {
+                if (!_pendingRegistrations.TryGetValue(identifier, out var pending))
+                    return Result<AuthResponse>.Failure("USER_NOT_FOUND", "Phiên đăng ký đã hết hạn hoặc không tìm thấy thông tin đăng ký. Vui lòng đăng ký lại.");
+
+                await _users.RemoveUnverifiedByEmailOrPhoneAsync(pending.Email, pending.Phone, ct);
+
+                if (await _users.ExistsByEmailAsync(pending.Email, ct))
+                    return Result<AuthResponse>.Failure("EMAIL_EXISTS", "Email này đã được đăng ký");
+
+                if (await _users.ExistsByPhoneAsync(pending.Phone, ct))
+                    return Result<AuthResponse>.Failure("PHONE_EXISTS", "Số điện thoại này đã được đăng ký");
+
+                user = new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = pending.FullName,
+                    Email = pending.Email,
+                    Phone = pending.Phone,
+                    PasswordHash = pending.PasswordHash,
+                    Role = UserRole.TRAVELER,
+                    Status = UserStatus.ACTIVE,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _users.AddAsync(user, ct);
+                otp.UserId = user.Id;
+                _pendingRegistrations.TryRemove(identifier, out _);
+            }
+            else
+            {
+                // Kích hoạt user nếu đang Pending
+                if (user.Status == UserStatus.PENDING_VERIFICATION)
+                {
+                    user.Status = UserStatus.ACTIVE;
+                    _users.Update(user);
+                }
+                _pendingRegistrations.TryRemove(identifier, out _);
+            }
+
+            // 5. Đánh dấu OTP đã dùng
             otp.UsedAt = DateTime.UtcNow;
             _otps.Update(otp);
 
-            // 5. Tìm user theo mục đích
-            var user = await _users.GetByEmailAsync(identifier, ct);
-            if (user == null)
-                return Result<AuthResponse>.Failure("USER_NOT_FOUND", "Không tìm thấy tài khoản");
-
-            // 6. Kích hoạt user nếu đang Pending
-            if (user.Status == UserStatus.PENDING_VERIFICATION)
-            {
-                user.Status = UserStatus.ACTIVE;
-                _users.Update(user);
-            }
-
-            // 7. Lưu tất cả một lần (OTP + User cùng DbContext)
+            // 6. Lưu tất cả một lần (User + OTP cùng DbContext)
             await _users.SaveChangesAsync(ct);
 
-            // 8. Cấp JWT
+            // 7. Cấp JWT
             var (token, expiresAt) = _jwt.GenerateAccessToken(user.Id, user.Email, user.Role.ToString());
 
             return Result<AuthResponse>.Success(new AuthResponse
@@ -253,7 +297,7 @@ public class AuthService
             });
 
         var plainCode = _otpGenerator.Generate();
-        var result = await SaveAndSendOtpAsync(identifier, plainCode, "ForgotPassword", ct);
+        var result = await SaveAndSendOtpAsync(identifier, plainCode, "ForgotPassword", ct, userId: user.Id);
 
         if (!result.IsSuccess)
             return Result<OtpSentResponse>.Failure(result.ErrorCode!, result.ErrorMessage!);
@@ -287,7 +331,7 @@ public class AuthService
         if (otp.Attempts >= otp.MaxAttempts)
             return Result<AuthResponse>.Failure("OTP_LOCKED", "Bạn đã nhập sai quá số lần cho phép");
 
-        if (HashOtp(req.Code) != otp.CodeHash)
+        if (HashOtp(req.Code.Trim()) != otp.CodeHash)
         {
             otp.Attempts += 1;
             _otps.Update(otp);
@@ -333,21 +377,24 @@ public class AuthService
         var purpose = string.IsNullOrEmpty(req.Purpose) ? "Register" : req.Purpose;
         var identifier = req.Email.ToLowerInvariant().Trim();
 
-        // Kiểm tra email có user hay không (theo purpose)
+        // Kiểm tra email có user hoặc phiên đăng ký tạm hay không
         var user = await _users.GetByEmailAsync(identifier, ct);
-        if (user == null)
-            return Result<OtpSentResponse>.Failure("USER_NOT_FOUND", "Không tìm thấy tài khoản");
+        var hasPendingRegistration = purpose.Equals("Register", StringComparison.OrdinalIgnoreCase)
+            && _pendingRegistrations.ContainsKey(identifier);
 
-        // Resend bằng cách tạo OTP mới (mã cũ vẫn nhưng failed attempts không tăng)
+        if (user == null && !hasPendingRegistration)
+            return Result<OtpSentResponse>.Failure("USER_NOT_FOUND", "Không tìm thấy thông tin đăng ký. Vui lòng đăng ký lại.");
+
+        // Resend bằng cách tạo OTP mới
         var plainCode = _otpGenerator.Generate();
-        var result = await SaveAndSendOtpAsync(identifier, plainCode, purpose, ct);
+        var result = await SaveAndSendOtpAsync(identifier, plainCode, purpose, ct, userId: user?.Id);
 
         if (!result.IsSuccess)
             return Result<OtpSentResponse>.Failure(result.ErrorCode!, result.ErrorMessage!);
 
         return Result<OtpSentResponse>.Success(new OtpSentResponse
         {
-            Email = req.Email,
+            Email = identifier,
             Purpose = purpose,
             ExpiresAt = DateTime.UtcNow.AddMinutes(5),
             ResendCountdown = 60
@@ -359,27 +406,11 @@ public class AuthService
     #region Helpers
 
     /// <summary>
-    /// Lưu OTP (hash) vào DB và gửi email. Tách riêng để dùng chung cho mọi flow.
+    /// Gửi OTP tới email TRƯỚC, nếu gửi thành công mới lưu OTP (hash) vào DB.
+    /// Đảm bảo nếu gửi mail lỗi thì không lưu rác vào DB.
     /// </summary>
     private async Task<Result<bool>> SaveAndSendOtpAsync(string identifier, string plainCode, string purpose, CancellationToken ct, Guid? userId = null)
     {
-        var otp = new OtpCode
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId, // Gán UserId để thỏa mãn FK constraint
-            Recipient = identifier,
-            CodeHash = HashOtp(plainCode),
-            Purpose = purpose,
-            Attempts = 0,
-            MaxAttempts = 3,
-            CreatedAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(5),
-            IpAddress = "0.0.0.0" // Sẽ update IP thực tế từ HttpContext nếu cần
-        };
-        await _otps.AddAsync(otp, ct);
-        // Lưu OTP vào DB ngay để VerifyOtp có thể tìm thấy sau đó
-        await _otps.SaveChangesAsync(ct);
-
         try
         {
             await _otpSender.SendAsync(identifier, plainCode, ct);
@@ -388,6 +419,22 @@ public class AuthService
         {
             return Result<bool>.Failure("SEND_FAILED", $"Không thể gửi OTP tới email: {ex.Message}");
         }
+
+        var otp = new OtpCode
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Recipient = identifier,
+            CodeHash = HashOtp(plainCode),
+            Purpose = purpose,
+            Attempts = 0,
+            MaxAttempts = 3,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            IpAddress = "0.0.0.0"
+        };
+        await _otps.AddAsync(otp, ct);
+        await _otps.SaveChangesAsync(ct);
 
         return Result<bool>.Success(true);
     }
@@ -404,6 +451,7 @@ public class AuthService
         var bytes = Encoding.UTF8.GetBytes(salt + code);
         return Convert.ToHexString(sha.ComputeHash(bytes));
     }
+
     /// <summary>
     /// Đăng nhập/Đăng ký bằng Google.
     /// Verify id_token → tìm/tạo user → cấp JWT.
