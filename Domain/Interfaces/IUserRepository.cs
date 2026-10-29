@@ -13,6 +13,7 @@ public interface IUserRepository
     Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
     Task<bool> ExistsByPhoneAsync(string phone, CancellationToken ct = default);
+    Task RemoveUnverifiedByEmailOrPhoneAsync(string email, string phone, CancellationToken ct = default);
     Task AddAsync(User user, CancellationToken ct = default);
     void Update(User user);
     Task SaveChangesAsync(CancellationToken ct = default);
