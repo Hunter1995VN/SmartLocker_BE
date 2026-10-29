@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminIncidentService, AdminIncidentService>();
         services.AddScoped<IAdminAbandonedPropertyService, AdminAbandonedPropertyService>();
         services.AddScoped<IAdminReconciliationService, AdminReconciliationService>();
+        services.AddScoped<IManualRefundService, ManualRefundService>();
         services.AddScoped<IPromotionVoucherService, PromotionVoucherService>();
         services.AddScoped<IOfflineTicketService, OfflineTicketService>();
 

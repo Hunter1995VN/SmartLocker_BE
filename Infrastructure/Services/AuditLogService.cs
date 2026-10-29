@@ -59,12 +59,12 @@ public class AuditLogService : IAuditLogService
         int pageSize = 50)
     {
         var baseQuery = _db.AuditLogs.AsNoTracking()
-            .Where(a => a.Action != "USER_NOTIFICATION_PREFS" && a.Action != "PROMO_META_SNAPSHOT");
+            .Where(a => a.Action != "USER_NOTIFICATION_PREFS" && a.Action != "PROMO_META_SNAPSHOT" && a.Action != "MANUAL_REFUND_META");
 
         // Thống kê tổng quan trên toàn bộ AuditLogs an ninh
         var totalAll = await baseQuery.CountAsync();
         var unlockCount = await baseQuery.CountAsync(a => a.Action.Contains("UNLOCK"));
-        var policyCount = await baseQuery.CountAsync(a => a.Action.Contains("PRICING") || a.Action.Contains("STATION") || a.Action.Contains("LOCKER") || a.Action.Contains("RECONCIL") || a.Action.Contains("VOUCHER") || a.Action.Contains("CAMPAIGN") || a.Action.Contains("PROMO"));
+        var policyCount = await baseQuery.CountAsync(a => a.Action.Contains("PRICING") || a.Action.Contains("STATION") || a.Action.Contains("LOCKER") || a.Action.Contains("RECONCIL") || a.Action.Contains("REFUND") || a.Action.Contains("VOUCHER") || a.Action.Contains("CAMPAIGN") || a.Action.Contains("PROMO"));
         var userSecCount = await baseQuery.CountAsync(a => a.Action.Contains("USER") || a.Action.Contains("STAFF") || a.Action.Contains("DEBT") || a.Action.Contains("LOGIN"));
         var abandonedCount = await baseQuery.CountAsync(a => a.Action.Contains("ABANDONED"));
 
