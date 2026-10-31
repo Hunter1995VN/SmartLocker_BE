@@ -64,6 +64,7 @@ public class UserAdminListItemDto
     public string Role { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public decimal OverdueDebt { get; set; }
+    public bool IsBookingBlocked { get; set; }
     public string? AvatarUrl { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

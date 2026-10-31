@@ -125,6 +125,7 @@ public class AdminUserService : IAdminUserService
                 Role = u.Role.ToString(),
                 Status = u.Status.ToString(),
                 OverdueDebt = u.OverdueDebt,
+                IsBookingBlocked = u.Role == UserRole.TRAVELER && u.OverdueDebt > 0,
                 AvatarUrl = u.AvatarUrl,
                 CreatedAt = u.CreatedAt,
                 UpdatedAt = u.UpdatedAt,
@@ -182,6 +183,7 @@ public class AdminUserService : IAdminUserService
                 Role = u.Role.ToString(),
                 Status = u.Status.ToString(),
                 OverdueDebt = u.OverdueDebt,
+                IsBookingBlocked = false,
                 AvatarUrl = u.AvatarUrl,
                 CreatedAt = u.CreatedAt,
                 UpdatedAt = u.UpdatedAt,
@@ -572,6 +574,7 @@ public class AdminUserService : IAdminUserService
             Role = staff.Role.ToString(),
             Status = staff.Status.ToString(),
             OverdueDebt = 0,
+            IsBookingBlocked = false,
             CreatedAt = staff.CreatedAt,
             UpdatedAt = staff.UpdatedAt,
             ActionsCount = 0
@@ -678,6 +681,7 @@ public class AdminUserService : IAdminUserService
             Role = user.Role.ToString(),
             Status = user.Status.ToString(),
             OverdueDebt = user.OverdueDebt,
+            IsBookingBlocked = user.Role == UserRole.TRAVELER && user.OverdueDebt > 0,
             AvatarUrl = user.AvatarUrl,
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt,
@@ -917,6 +921,7 @@ public class AdminUserService : IAdminUserService
             Role = user.Role.ToString(),
             Status = user.Status.ToString(),
             OverdueDebt = user.OverdueDebt,
+            IsBookingBlocked = user.Role == UserRole.TRAVELER && user.OverdueDebt > 0,
             AvatarUrl = user.AvatarUrl,
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt
@@ -931,33 +936,24 @@ public class AdminUserService : IAdminUserService
     public async Task<ApiResponse<int>> BlockAllDebtorsAsync(string? reason, Guid adminUserId)
     {
         var debtors = await _db.Users
-            .Where(u => u.Role == UserRole.TRAVELER && u.OverdueDebt > 0 && u.Status == UserStatus.ACTIVE)
+            .Where(u => u.Role == UserRole.TRAVELER && u.OverdueDebt > 0)
             .ToListAsync();
 
         if (debtors.Count == 0)
-            return ApiResponse<int>.SuccessResponse(0, "Không có tài khoản nợ xấu nào đang ở trạng thái ACTIVE cần chặn thêm");
-
-        var now = DateTime.UtcNow;
-        foreach (var d in debtors)
-        {
-            d.Status = UserStatus.SUSPENDED;
-            d.UpdatedAt = now;
-        }
-
-        await _db.SaveChangesAsync();
+            return ApiResponse<int>.SuccessResponse(0, "Không có tài khoản khách hàng nào đang có nợ cước cần xử lý");
 
         var actor = await GetActorInfoAsync(adminUserId);
-        var cleanReason = string.IsNullOrWhiteSpace(reason) ? "Chặn tự động tài khoản có dư nợ quá hạn chưa thanh toán (UC-A06)" : reason.Trim();
+        var cleanReason = string.IsNullOrWhiteSpace(reason) ? "Tạm khóa quyền đặt tủ do có dư nợ cước quá hạn chưa thanh toán (BR-P08)" : reason.Trim();
         await _auditLog.LogAsync(
             adminUserId,
             actor.Email,
             actor.Role,
-            "BATCH_SUSPEND_DEBTORS",
+            "BATCH_BLOCK_BOOKING_DEBTORS",
             "User",
             $"Count:{debtors.Count}",
-            $"Đã chặn {debtors.Count} tài khoản khách hàng có nợ xấu. Lý do: {cleanReason}"
+            $"Đã kích hoạt tạm khóa quyền đặt tủ cho {debtors.Count} khách hàng có nợ cước. Lý do: {cleanReason}"
         );
 
-        return ApiResponse<int>.SuccessResponse(debtors.Count, $"Đã chặn thành công {debtors.Count} tài khoản khách hàng có nợ xấu");
+        return ApiResponse<int>.SuccessResponse(debtors.Count, $"Đã xác nhận tạm khóa quyền đặt tủ cho {debtors.Count} khách hàng nợ cước (tài khoản vẫn duy trì hoạt động để đăng nhập thanh toán).");
     }
 }
