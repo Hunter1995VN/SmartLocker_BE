@@ -46,13 +46,11 @@ public sealed class DoorEventHandler(
         var timestamp = message.OccurredAt.UtcDateTime;
         
         // Find locker to update and notify
-        var normalizedCode = message.DeviceCode.Replace("-00", "-0");
         var locker = await db.Lockers
-            .Include(l => l.Bookings)
+            .Include(l => l.Bookings).ThenInclude(b => b.AccessCredential)
             .FirstOrDefaultAsync(l => l.Id == message.LockerId
-                && (db.IoTDevices.Any(d => d.Id == l.IoTDeviceId
-                    && (d.DeviceCode == message.DeviceCode || d.DeviceCode.Replace("-00", "-0") == normalizedCode) 
-                    && d.StationId == l.StationId) || l.IoTDeviceId == null), ct);
+                && db.IoTDevices.Any(d => d.Id == l.IoTDeviceId
+                    && d.DeviceCode == message.DeviceCode && d.StationId == l.StationId), ct);
 
         if (locker == null)
         {
@@ -66,6 +64,8 @@ public sealed class DoorEventHandler(
             return;
         }
 
+        var previousDoorState = locker.DoorState;
+        var previousDoorAt = locker.LastDoorEventAt;
         locker.DoorState = message.DoorState;
         locker.LastDoorEventAt = timestamp;
         locker.UpdatedAt = DateTime.UtcNow;
@@ -77,20 +77,43 @@ public sealed class DoorEventHandler(
 
         if (activeBooking != null)
         {
-            if (message.DoorState == "CLOSED")
+            if (message.DoorState == "CLOSED" && previousDoorState == "OPEN")
             {
-                if (activeBooking.Status == BookingStatus.CONFIRMED && activeBooking.CheckedInAt != null)
+                if (activeBooking.Status == BookingStatus.CONFIRMED && activeBooking.CheckedInAt != null && previousDoorAt >= activeBooking.CheckedInAt)
                 {
                     // Luggage deposited and door shut -> Transition to STORED
+                    var duration = activeBooking.EndAt - activeBooking.StartAt;
+                    if (duration <= TimeSpan.Zero)
+                    {
+                        logger.LogWarning("Ignored deposit completion with invalid booked duration for {BookingId}", activeBooking.Id);
+                    }
+                    else
+                    {
+                    // Start the purchased duration at the actual observed opening, not booking/payment time.
+                    activeBooking.CheckedInAt = previousDoorAt!.Value;
+                    activeBooking.StartAt = previousDoorAt.Value;
+                    activeBooking.EndAt = previousDoorAt.Value.Add(duration);
                     activeBooking.Status = BookingStatus.STORED;
+                    activeBooking.UpdatedAt = DateTime.UtcNow;
                     locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
                     logger.LogInformation("Booking {BookingCode} transitioned to STORED upon door close.", activeBooking.BookingCode);
+                    }
                 }
-                else if (activeBooking.Status == BookingStatus.STORED && activeBooking.CheckedOutAt != null)
+                else if (activeBooking.Status == BookingStatus.STORED && activeBooking.CheckedOutAt != null && previousDoorAt >= activeBooking.CheckedOutAt
+                    && string.IsNullOrEmpty(activeBooking.ManualConfirmPhotoUrl))
                 {
                     // Luggage retrieved and door shut -> Transition to COMPLETED & free locker
                     activeBooking.Status = BookingStatus.COMPLETED;
+                    activeBooking.CheckedOutAt = timestamp;
+                    activeBooking.UpdatedAt = DateTime.UtcNow;
+                    // Keep the short-lived session for read-only completion polling after SignalR loss.
                     locker.BusinessStatus = LockerBusinessStatus.AVAILABLE;
+                    if (activeBooking.AccessCredential is { } credential)
+                    {
+                        credential.IsActive = false;
+                        credential.RevokedAt = DateTime.UtcNow;
+                        credential.RevokeReason = "Checkout completed";
+                    }
                     logger.LogInformation("Booking {BookingCode} transitioned to COMPLETED upon door close.", activeBooking.BookingCode);
                 }
             }

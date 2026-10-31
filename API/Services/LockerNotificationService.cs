@@ -31,6 +31,10 @@ public class LockerNotificationService : ILockerNotificationService
         });
     }
 
+    public Task NotifyStationStatusChangedAsync(Guid stationId, string connectivityStatus, DateTimeOffset occurredAt) =>
+        _hubContext.Clients.Group($"station_{stationId.ToString().ToLowerInvariant()}")
+            .SendAsync("StationStatusChanged", new { stationId, connectivityStatus, occurredAt });
+
     public async Task NotifyLockerUnlockedAsync(Guid stationId, Guid lockerId, string lockerCode)
     {
         var groupName = $"station_{stationId.ToString().ToLower()}";

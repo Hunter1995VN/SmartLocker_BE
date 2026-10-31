@@ -1,0 +1,14 @@
+{
+  "Status": "CONFIRMED",
+  "CheckedInAt": "2026-10-31T08:20:47.3107407",
+  "StartAt": "2026-10-31T08:09:20.1855403",
+  "EndAt": "2026-10-31T09:09:20.1855403",
+  "CheckedOutAt": null,
+  "LockerCode": "SIM-MQTT-01",
+  "BusinessStatus": "RESERVED",
+  "DoorState": "OPEN",
+  "LastDoorEventAt": "2026-10-31T08:20:52.399",
+  "ProtectedPin": 1,
+  "IsActive": true,
+  "RevokedAt": null
+}

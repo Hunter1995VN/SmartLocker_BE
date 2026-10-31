@@ -24,6 +24,7 @@ public class KioskCheckInRequest
 
 public class KioskCheckInResponse
 {
+    public string? SessionToken { get; set; }
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
     public Guid LockerId { get; set; }
@@ -78,6 +79,21 @@ public class KioskStationStatusResponse
     public Guid StationId { get; set; }
     public string StationName { get; set; } = string.Empty;
     public string StationAddress { get; set; } = string.Empty;
-    public string ConnectivityStatus { get; set; } = "ONLINE";
+    public string ConnectivityStatus { get; set; } = "OFFLINE";
     public List<KioskLockerItemDto> Lockers { get; set; } = new();
+}
+
+public class KioskOperationStatusRequest
+{
+    public Guid StationId { get; set; }
+    public Guid BookingId { get; set; }
+    public string SessionToken { get; set; } = string.Empty;
+}
+public class KioskOperationStatusResponse
+{
+    public string BookingStatus { get; set; } = string.Empty;
+    public string Operation { get; set; } = string.Empty;
+    public string DoorState { get; set; } = string.Empty;
+    public bool Complete { get; set; }
+    public bool ManualReviewPending { get; set; }
 }

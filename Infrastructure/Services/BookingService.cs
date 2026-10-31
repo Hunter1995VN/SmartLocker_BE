@@ -577,79 +577,9 @@ public class BookingService : IBookingService
     /// </summary>
     public async Task<ApiResponse<BookingDto>> CheckInBookingAsync(Guid userId, Guid bookingId)
     {
-        var booking = await _context.Bookings
-            .Include(b => b.Station)
-            .Include(b => b.Locker)
-            .Include(b => b.Payments)
-            .Include(b => b.AccessCredential)
-            .FirstOrDefaultAsync(b => b.Id == bookingId);
-
-        if (booking == null)
-            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy thông tin đặt tủ.");
-
-        if (booking.UserId != userId)
-            return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền thực hiện thao tác trên đơn này.");
-
-        if (booking.Status == BookingStatus.STORED)
-            return ApiResponse<BookingDto>.SuccessResponse(MapToBookingDto(booking), "Tủ đã được mở và đang trong quá trình lưu trữ.");
-
-        if (booking.Status != BookingStatus.CONFIRMED)
-            return ApiResponse<BookingDto>.ErrorResponse($"Không thể nhận tủ ở trạng thái hiện tại ({booking.Status}). Chỉ nhận tủ khi đơn ở trạng thái CONFIRMED.");
-
-        var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var confirmedAt = basePayment?.PaidAt ?? booking.CreatedAt;
-        var holdExpiresAt = confirmedAt.AddMinutes(30);
-
-        if (DateTime.UtcNow > holdExpiresAt)
-        {
-            booking.Status = BookingStatus.NO_SHOW;
-            booking.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return ApiResponse<BookingDto>.ErrorResponse("Đã quá 30 phút giữ chỗ. Đơn đặt tủ đã hết hạn (No-show).");
-        }
-
-        var durationHours = (booking.EndAt - booking.StartAt).TotalHours;
-        if (durationHours <= 0) durationHours = 1;
-
-        var now = DateTime.UtcNow;
-        booking.CheckedInAt = now;
-        booking.StartAt = now;
-        booking.EndAt = now.AddHours(durationHours);
-        booking.Status = BookingStatus.STORED;
-        booking.UpdatedAt = now;
-
-        if (booking.LockerId == null)
-        {
-            var availableLocker = await _context.Lockers
-                .FirstOrDefaultAsync(l => l.StationId == booking.StationId
-                                       && l.Size == booking.Size
-                                       && l.BusinessStatus == LockerBusinessStatus.AVAILABLE
-                                       && l.HealthStatus == LockerHealthStatus.HEALTHY);
-
-            if (availableLocker != null)
-            {
-                booking.LockerId = availableLocker.Id;
-                booking.Locker = availableLocker;
-                availableLocker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
-                availableLocker.UpdatedAt = now;
-            }
-        }
-        else if (booking.Locker != null)
-        {
-            booking.Locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
-            booking.Locker.UpdatedAt = now;
-        }
-
-        if (booking.AccessCredential != null)
-        {
-            OnlineTicket.Rotate(booking.AccessCredential, booking.StationId, now);
-        }
-
-        await _context.SaveChangesAsync();
-        _logger.LogInformation("Booking {Code} checked in at {Time}. New EndAt: {EndAt}. Assigned Locker: {Locker}",
-            booking.BookingCode, booking.CheckedInAt, booking.EndAt, booking.Locker?.LockerCode ?? "N/A");
-
-        return ApiResponse<BookingDto>.SuccessResponse(MapToBookingDto(booking), "Nhận tủ thành công! Thời gian lưu trữ bắt đầu tính từ bây giờ.");
+        if (!await _context.Bookings.AnyAsync(b => b.Id == bookingId && b.UserId == userId))
+            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy đơn hoặc bạn không có quyền truy cập.");
+        return ApiResponse<BookingDto>.ErrorResponse("Vui lòng xác thực vé tại Kiosk. Chỉ sự kiện mở rồi đóng cửa thật mới xác nhận gửi đồ.");
     }
 
     /// <summary>
