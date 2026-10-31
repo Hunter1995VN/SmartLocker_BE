@@ -18,6 +18,7 @@ public class BookingService : IBookingService
     private readonly IPaymentGatewayService _paymentGateway;
     private readonly IPaymentService _paymentService;
     private readonly IOfflineTicketService _offlineTicketService;
+    private readonly IAccessPinProtector? _pinProtector;
     private readonly IPromotionVoucherService? _promotionService;
     private readonly ILogger<BookingService> _logger;
 
@@ -28,7 +29,7 @@ public class BookingService : IBookingService
         IPaymentService paymentService,
         IOfflineTicketService offlineTicketService,
         ILogger<BookingService> logger,
-        IPromotionVoucherService? promotionService = null)
+        IPromotionVoucherService? promotionService = null, IAccessPinProtector? pinProtector = null)
     {
         _context = context;
         _pricingService = pricingService;
@@ -37,6 +38,7 @@ public class BookingService : IBookingService
         _offlineTicketService = offlineTicketService;
         _logger = logger;
         _promotionService = promotionService;
+        _pinProtector = pinProtector;
     }
 
     /// <summary>
@@ -249,6 +251,14 @@ public class BookingService : IBookingService
             }
         }
 
+        if (booking.Status is BookingStatus.CONFIRMED or BookingStatus.STORED
+            && booking.AccessCredential is { IsActive: true, RevokedAt: null } credential
+            && OnlineTicket.NeedsRotation(credential, booking.StationId, DateTime.UtcNow))
+        {
+            OnlineTicket.Rotate(credential, booking.StationId, DateTime.UtcNow);
+            await _context.SaveChangesAsync();
+        }
+
         var dto = MapToBookingDto(booking);
 
         // Calculate derived fields
@@ -310,7 +320,9 @@ public class BookingService : IBookingService
                 HoldExpiresAt = holdExpiresAt,
                 DurationHours = duration,
                 LockerCode = b.Locker != null ? b.Locker.LockerCode : null,
-                AccessCode = b.AccessCredential != null ? b.AccessCredential.OfflinePayload : null,
+                AccessCode = b.Status is BookingStatus.CONFIRMED or BookingStatus.STORED
+                    && b.AccessCredential is { IsActive: true, RevokedAt: null }
+                    ? OnlineTicket.GetDisplayPin(b.AccessCredential, _pinProtector) : null,
                 BaseAmount = b.BaseAmount,
                 IsOverdue = b.IsOverdue,
                 CreatedAt = b.CreatedAt
@@ -630,7 +642,7 @@ public class BookingService : IBookingService
 
         if (booking.AccessCredential != null)
         {
-            booking.AccessCredential.QrExpiresAt = booking.EndAt;
+            OnlineTicket.Rotate(booking.AccessCredential, booking.StationId, now);
         }
 
         await _context.SaveChangesAsync();
@@ -700,9 +712,11 @@ public class BookingService : IBookingService
         DateTime? offlineExpiresAt = null;
         bool isOfflineReady = false;
 
-        if (booking.AccessCredential != null)
+        var ticketVisible = booking.Status is BookingStatus.CONFIRMED or BookingStatus.STORED
+            && booking.AccessCredential is { IsActive: true, RevokedAt: null };
+        if (ticketVisible)
         {
-            pin = _offlineTicketService.ExtractPinFromCredential(booking.AccessCredential);
+            pin = OnlineTicket.GetDisplayPin(booking.AccessCredential, _pinProtector);
             offlineExpiresAt = booking.AccessCredential.OfflineExpiresAt ?? booking.EndAt.AddHours(24);
 
             if (!string.IsNullOrWhiteSpace(booking.AccessCredential.OfflinePayload) && booking.AccessCredential.OfflinePayload.Contains('.'))
@@ -713,12 +727,6 @@ public class BookingService : IBookingService
             else if (!string.IsNullOrWhiteSpace(booking.AccessCredential.QrPayload) && booking.AccessCredential.QrPayload.Contains('.'))
             {
                 hmacToken = booking.AccessCredential.QrPayload;
-                isOfflineReady = true;
-            }
-            else
-            {
-                var nonce = booking.AccessCredential.OfflineNonce ?? Guid.NewGuid().ToString("N");
-                hmacToken = _offlineTicketService.GenerateHmacToken(booking, pin, offlineExpiresAt.Value, nonce);
                 isOfflineReady = true;
             }
         }
@@ -732,8 +740,8 @@ public class BookingService : IBookingService
             StationName = booking.Station.Name,
             StationAddress = booking.Station.Address,
             LockerCode = booking.Locker?.LockerCode,
-            AccessCode = pin ?? booking.AccessCredential?.OfflinePayload,
-            QrPayload = hmacToken ?? booking.AccessCredential?.QrPayload,
+            AccessCode = pin,
+            QrPayload = ticketVisible ? booking.AccessCredential?.QrPayload : null,
             OfflineHmacToken = hmacToken,
             OfflineExpiresAt = offlineExpiresAt,
             IsOfflineReady = isOfflineReady,

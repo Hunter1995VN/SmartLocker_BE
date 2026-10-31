@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.DataProtection;
 using API.Middleware;
 using Application.Interfaces;
 using Infrastructure.Data;
@@ -14,6 +15,16 @@ using SmartInfrastructure;
 using Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var keyFolder = builder.Configuration["TicketProtection:KeyDirectory"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys");
+var protection = builder.Services.AddDataProtection().SetApplicationName("SmartLocker.AccessTickets")
+    .PersistKeysToFileSystem(new DirectoryInfo(keyFolder));
+var certificateThumbprint = builder.Configuration["TicketProtection:CertificateThumbprint"];
+if (!string.IsNullOrWhiteSpace(certificateThumbprint)) protection.ProtectKeysWithCertificate(certificateThumbprint);
+else if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
+else throw new InvalidOperationException("Configure TicketProtection:CertificateThumbprint to encrypt the persisted ticket key ring.");
+builder.Services.AddSingleton<IAccessPinProtector, API.Services.AccessPinProtector>();
 
 // === Controllers + JSON enum serialization ===
 builder.Services.AddControllers()
