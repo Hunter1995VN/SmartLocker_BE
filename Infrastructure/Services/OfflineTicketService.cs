@@ -19,15 +19,17 @@ public class OfflineTicketService : IOfflineTicketService
     private readonly IConfiguration _configuration;
     private readonly ILogger<OfflineTicketService> _logger;
     private readonly byte[] _secretKeyBytes;
+    private readonly IAccessPinProtector? _pinProtector;
 
     public OfflineTicketService(
         ISmartLockerDbContext db,
         IConfiguration configuration,
-        ILogger<OfflineTicketService> logger)
+        ILogger<OfflineTicketService> logger, IAccessPinProtector? pinProtector = null)
     {
         _db = db;
         _configuration = configuration;
         _logger = logger;
+        _pinProtector = pinProtector;
 
         var secret = _configuration["JwtSettings:SecretKey"];
         if (string.IsNullOrWhiteSpace(secret))
@@ -92,7 +94,9 @@ public class OfflineTicketService : IOfflineTicketService
 
         using var hmac = new HMACSHA256(_secretKeyBytes);
         var expectedSignature = hmac.ComputeHash(Encoding.UTF8.GetBytes(unsignedToken));
-        var actualSignature = Base64UrlDecode(signatureEncoded);
+        byte[] actualSignature;
+        try { actualSignature = Base64UrlDecode(signatureEncoded); }
+        catch (FormatException) { return (false, null, "Chữ ký vé không đúng định dạng."); }
 
         if (!CryptographicOperations.FixedTimeEquals(expectedSignature, actualSignature))
         {
@@ -143,6 +147,8 @@ public class OfflineTicketService : IOfflineTicketService
 
     public string ExtractPinFromCredential(AccessCredential credential)
     {
+        if (!string.IsNullOrEmpty(credential.ProtectedAccessCode))
+            return OnlineTicket.GetDisplayPin(credential, _pinProtector) ?? string.Empty;
         // 1. Kiểm tra nếu OfflinePayload là token JWS
         if (!string.IsNullOrWhiteSpace(credential.OfflinePayload))
         {
@@ -150,10 +156,10 @@ public class OfflineTicketService : IOfflineTicketService
             if (raw.Contains('.'))
             {
                 var (isValid, ticket, _) = VerifyHmacToken(raw);
-                if (isValid && ticket != null && !string.IsNullOrWhiteSpace(ticket.AccessPin))
+                if (isValid && ticket != null && MatchesPin(credential, ticket.AccessPin))
                     return ticket.AccessPin;
             }
-            else if (raw.Length >= 4 && raw.Length <= 8 && raw.All(char.IsLetterOrDigit))
+            else if (MatchesPin(credential, raw))
             {
                 return raw;
             }
@@ -166,14 +172,17 @@ public class OfflineTicketService : IOfflineTicketService
             if (raw.Contains('.'))
             {
                 var (isValid, ticket, _) = VerifyHmacToken(raw);
-                if (isValid && ticket != null && !string.IsNullOrWhiteSpace(ticket.AccessPin))
+                if (isValid && ticket != null && MatchesPin(credential, ticket.AccessPin))
                     return ticket.AccessPin;
             }
         }
 
         // 3. Fallback: Nếu không có PIN đọc được
-        return RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        return string.Empty;
     }
+
+    private static bool MatchesPin(AccessCredential credential, string pin) =>
+        pin.Length is 6 or 8 && pin.All(char.IsAsciiDigit) && OnlineTicket.HashPin(pin) == credential.AccessCodeHash;
 
     public async Task<ApiResponse<OfflineTicketDto>> GetOfflineTicketAsync(Guid userId, Guid bookingId, CancellationToken ct = default)
     {
@@ -189,88 +198,41 @@ public class OfflineTicketService : IOfflineTicketService
         if (booking.UserId != userId)
             return ApiResponse<OfflineTicketDto>.ErrorResponse("Bạn không có quyền truy cập vé mở khóa của đơn đặt này.");
 
-        if (booking.Status == BookingStatus.PENDING_PAYMENT)
-            return ApiResponse<OfflineTicketDto>.ErrorResponse("Đơn đặt chỗ chưa thanh toán. Vui lòng thanh toán để nhận vé mở khóa.");
-
-        if (booking.Status == BookingStatus.CANCELLED)
-            return ApiResponse<OfflineTicketDto>.ErrorResponse("Đơn đặt chỗ đã bị hủy. Vé mở khóa không còn hiệu lực.");
+        if (booking.Status is not (BookingStatus.CONFIRMED or BookingStatus.STORED)
+            || booking.AccessCredential is not { IsActive: true, RevokedAt: null })
+            return ApiResponse<OfflineTicketDto>.ErrorResponse("Đơn không có vé đang hoạt động. Không thể cấp lại quyền mở tủ.");
 
         var credential = booking.AccessCredential;
         string pin;
         string hmacToken;
         DateTime validUntil;
 
-        if (credential == null)
+        // Reading an offline ticket must not replace the dynamic QR or invent a PIN.
+        pin = ExtractPinFromCredential(credential!);
+        if (string.IsNullOrEmpty(pin))
+            return ApiResponse<OfflineTicketDto>.ErrorResponse("Không đọc được PIN hợp lệ của vé. Vui lòng liên hệ nhân viên.");
+        validUntil = credential!.OfflineExpiresAt ?? booking.EndAt.AddHours(24);
+        var existingToken = credential.OfflinePayload;
+        if (!string.IsNullOrWhiteSpace(existingToken) && existingToken.Contains('.'))
         {
-            // Tự sinh AccessCredential mới nếu đơn đã CONFIRMED mà chưa có
-            pin = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
-            using var sha = SHA256.Create();
-            var hashBytes = sha.ComputeHash(Encoding.UTF8.GetBytes(pin));
-            var hashString = Convert.ToHexString(hashBytes).ToLower();
-
+            var (valid, ticket, _) = VerifyHmacToken(existingToken);
+            if (valid && ticket != null && ticket.BookingId == booking.Id && ticket.StationId == booking.StationId
+                && ticket.AccessPin == pin)
+                validUntil = ticket.ExpiresAt;
+            else existingToken = null;
+        }
+        else existingToken = null;
+        if (existingToken == null)
+        {
             validUntil = booking.EndAt > DateTime.UtcNow ? booking.EndAt.AddHours(24) : DateTime.UtcNow.AddHours(24);
             var nonce = Guid.NewGuid().ToString("N");
             hmacToken = GenerateHmacToken(booking, pin, validUntil, nonce);
-
-            credential = new AccessCredential
-            {
-                BookingId = booking.Id,
-                AccessCodeHash = hashString,
-                OfflinePayload = hmacToken,
-                OfflineNonce = nonce,
-                OfflineExpiresAt = validUntil,
-                QrPayload = hmacToken,
-                QrNonce = nonce,
-                QrExpiresAt = validUntil,
-                IsActive = true,
-                IssuedAt = DateTime.UtcNow
-            };
-
-            _db.AccessCredentials.Add(credential);
+            credential.OfflinePayload = hmacToken;
+            credential.OfflineNonce = nonce;
+            credential.OfflineExpiresAt = validUntil;
             await _db.SaveChangesAsync(ct);
         }
-        else
-        {
-            pin = ExtractPinFromCredential(credential);
-            validUntil = credential.OfflineExpiresAt ?? (booking.EndAt > DateTime.UtcNow ? booking.EndAt.AddHours(24) : DateTime.UtcNow.AddHours(24));
-
-            // Kiểm tra xem đã có token HMAC hợp lệ chưa
-            var existingToken = !string.IsNullOrWhiteSpace(credential.OfflinePayload) && credential.OfflinePayload.Contains('.')
-                ? credential.OfflinePayload
-                : (!string.IsNullOrWhiteSpace(credential.QrPayload) && credential.QrPayload.Contains('.') ? credential.QrPayload : null);
-
-            var needsRegeneration = true;
-            if (!string.IsNullOrWhiteSpace(existingToken))
-            {
-                var (isValid, ticket, _) = VerifyHmacToken(existingToken);
-                if (isValid && ticket != null && ticket.ExpiresAt > DateTime.UtcNow)
-                {
-                    hmacToken = existingToken;
-                    validUntil = ticket.ExpiresAt;
-                    needsRegeneration = false;
-                }
-            }
-
-            if (needsRegeneration)
-            {
-                var nonce = Guid.NewGuid().ToString("N");
-                validUntil = booking.EndAt > DateTime.UtcNow ? booking.EndAt.AddHours(24) : DateTime.UtcNow.AddHours(24);
-                hmacToken = GenerateHmacToken(booking, pin, validUntil, nonce);
-
-                credential.OfflinePayload = hmacToken;
-                credential.OfflineNonce = nonce;
-                credential.OfflineExpiresAt = validUntil;
-                credential.QrPayload = hmacToken;
-                credential.QrNonce = nonce;
-                credential.QrExpiresAt = validUntil;
-
-                await _db.SaveChangesAsync(ct);
-            }
-            else
-            {
-                hmacToken = existingToken!;
-            }
-        }
+        else hmacToken = existingToken;
 
         var dto = new OfflineTicketDto
         {
@@ -290,7 +252,7 @@ public class OfflineTicketService : IOfflineTicketService
             ValidUntil = validUntil,
             IsOfflineReady = true,
             SecurityAlgorithm = "HMAC-SHA256 (JWS RFC 7515)",
-            Instructions = "Mã QR và PIN này được mã hóa bảo mật HMAC-SHA256 cục bộ. Bạn có thể quét trực tiếp tại camera Kiosk hoặc nhập mã PIN 6 số tại màn hình cảm ứng để mở tủ ngay cả khi điện thoại hoặc trạm mất kết nối Internet."
+            Instructions = "Mã QR và PIN này được mã hóa bảo mật HMAC-SHA256 cục bộ. Bạn có thể quét trực tiếp tại camera Kiosk hoặc nhập mã PIN trên màn hình cảm ứng để mở tủ ngay cả khi điện thoại hoặc trạm mất kết nối Internet."
         };
 
         return ApiResponse<OfflineTicketDto>.SuccessResponse(dto);

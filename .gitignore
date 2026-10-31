@@ -488,3 +488,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local ticket keys, device configuration and private acceptance evidence.
+API/App_Data/
