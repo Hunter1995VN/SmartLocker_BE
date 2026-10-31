@@ -500,78 +500,56 @@ public class BookingService : IBookingService
         try
         {
             var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == bookingId);
-            if (booking == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không tìm thấy đặt tủ.");
-            if (booking.UserId != userId) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có quyền.");
-            if (booking.Status != BookingStatus.STORED || !booking.IsOverdue)
-                return ApiResponse<CreateBookingResponse>.ErrorResponse("Đặt tủ không có phí quá hạn.");
-
-            var existingPendingPayment = await _context.Payments
-                .Where(p => p.BookingId == booking.Id 
-                         && p.Kind == PaymentKind.OVERDUE 
-                         && p.Status == PaymentStatus.PENDING)
-                .OrderByDescending(p => p.CreatedAt)
-                .FirstOrDefaultAsync();
-
-            if (existingPendingPayment != null)
-            {
-                if (existingPendingPayment.CreatedAt >= DateTime.UtcNow.AddMinutes(-15) && !string.IsNullOrEmpty(existingPendingPayment.PaymentLink))
-                {
-                    _logger.LogInformation("TC_BKO_20: Reusing existing pending overdue payment for booking {BookingId}, orderCode {OrderCode}", 
-                        booking.Id, existingPendingPayment.OrderCode);
-                    return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
-                    {
-                        BookingId = booking.Id,
-                        BookingCode = booking.BookingCode,
-                        Amount = existingPendingPayment.Amount,
-                        PaymentUrl = existingPendingPayment.PaymentLink
-                    }, "Đã có yêu cầu thanh toán phụ phí đang chờ xử lý. Đang chuyển hướng...");
-                }
-                else
-                {
-                    existingPendingPayment.Status = PaymentStatus.EXPIRED;
-                    await _context.SaveChangesAsync();
-                }
-            }
-
+            if (booking == null || booking.UserId != userId)
+                return ApiResponse<CreateBookingResponse>.ErrorResponse("Không tìm thấy đơn hoặc không có quyền.");
+            if (booking.Status != BookingStatus.STORED)
+                return ApiResponse<CreateBookingResponse>.ErrorResponse("Chỉ thanh toán phụ phí khi đơn đang lưu trữ.");
             var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
             if (policy == null) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá.");
-
-            var amount = _pricingService.CalculateOverdueFee(booking, policy);
-
-            var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + new Random().Next(1000, 9999).ToString());
-            var payment = new Payment
+            var pending = await _context.Payments.Where(p => p.BookingId == bookingId && p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PENDING)
+                .OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
+            if (pending != null && long.TryParse(pending.OrderCode, out var pendingCode))
+                await _paymentService.SyncPaymentStatusAsync(pendingCode);
+            var paid = await _context.Payments.Where(p => p.BookingId == bookingId && p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PAID)
+                .SumAsync(p => p.Amount);
+            var amount = Math.Max(0, _pricingService.CalculateOverdueFee(booking, policy) - paid);
+            if (amount <= 0) return ApiResponse<CreateBookingResponse>.ErrorResponse("Không còn phụ phí cần thanh toán. Vui lòng xác thực lại để lấy đồ.");
+            if (amount != decimal.Truncate(amount) || amount > int.MaxValue)
+                return ApiResponse<CreateBookingResponse>.ErrorResponse("Số tiền không phù hợp định dạng VND của cổng thanh toán.");
+            if (pending?.Status == PaymentStatus.PENDING)
             {
-                BookingId = booking.Id,
-                Kind = PaymentKind.OVERDUE,
-                Status = PaymentStatus.PENDING,
-                Amount = amount,
-                OrderCode = orderCode.ToString(),
-                Gateway = "PAYOS"
-            };
-            _context.Payments.Add(payment);
+                if (pending.Amount == amount && pending.CreatedAt >= DateTime.UtcNow.AddMinutes(-15) && !string.IsNullOrEmpty(pending.PaymentLink))
+                    return ApiResponse<CreateBookingResponse>.SuccessResponse(new() {
+                        BookingId = booking.Id, BookingCode = booking.BookingCode, Amount = amount,
+                        PaymentUrl = pending.PaymentLink, OrderCode = long.Parse(pending.OrderCode),
+                        PaymentExpiresAt = pending.ExpiresAt ?? pending.CreatedAt.AddMinutes(15)
+                    }, "Tiếp tục giao dịch phụ phí đang chờ.");
+                if (long.TryParse(pending.OrderCode, out var oldCode) && !await _paymentGateway.CancelPaymentLinkAsync(oldCode, "Overdue amount updated"))
+                    return ApiResponse<CreateBookingResponse>.ErrorResponse("Chưa thay thế được giao dịch cũ. Vui lòng kiểm tra lại thanh toán trước khi tiếp tục.");
+                pending.Status = PaymentStatus.EXPIRED;
+                await _context.SaveChangesAsync();
+            }
+            var now = DateTime.UtcNow;
+            var orderCode = long.Parse(now.ToString("yyMMddHHmm") + System.Security.Cryptography.RandomNumberGenerator.GetInt32(1000, 10000));
+            var payment = new Payment { BookingId = bookingId, Kind = PaymentKind.OVERDUE, Status = PaymentStatus.PENDING,
+                Amount = amount, OrderCode = orderCode.ToString(), Gateway = "PAYOS", ExpiresAt = now.AddMinutes(15) };
+            _context.Payments.Add(payment); await _context.SaveChangesAsync();
+            var link = await _paymentGateway.CreatePaymentLinkAsync(orderCode, (int)amount, $"Qua han {booking.BookingCode}", "", "");
+            payment.PaymentLink = link.CheckoutUrl; payment.GatewayTxnId = link.PaymentLinkId;
             await _context.SaveChangesAsync();
-
-            var (checkoutUrl, paymentLinkId) = await _paymentGateway.CreatePaymentLinkAsync(
-                orderCode, (int)amount, $"Qua han {booking.BookingCode}", "", "");
-
-            payment.PaymentLink = checkoutUrl;
-            payment.GatewayTxnId = paymentLinkId;
-            await _context.SaveChangesAsync();
-
-            return ApiResponse<CreateBookingResponse>.SuccessResponse(new CreateBookingResponse
-            {
-                BookingId = booking.Id,
-                BookingCode = booking.BookingCode,
-                Amount = amount,
-                PaymentUrl = checkoutUrl
-            }, "Tạo link thanh toán phụ phí quá hạn thành công.");
+            return ApiResponse<CreateBookingResponse>.SuccessResponse(new() {
+                BookingId = bookingId, BookingCode = booking.BookingCode, Amount = amount, OrderCode = orderCode,
+                PaymentUrl = link.CheckoutUrl, PaymentExpiresAt = payment.ExpiresAt!.Value, QrCode = link.QrCode,
+                AccountNumber = link.AccountNumber, AccountName = link.AccountName, Bin = link.Bin
+            }, "Đã tạo giao dịch phụ phí. Chỉ mở tủ sau khi máy chủ xác minh thanh toán.");
         }
-        finally
+        catch (Exception ex)
         {
-            semaphore.Release();
+            _logger.LogError("Overdue payment creation failed ({ErrorType}) for {BookingId}", ex.GetType().Name, bookingId);
+            return ApiResponse<CreateBookingResponse>.ErrorResponse("Chưa tạo được giao dịch phụ phí. Vui lòng thử lại hoặc liên hệ nhân viên.");
         }
+        finally { semaphore.Release(); }
     }
-
     /// <summary>
     /// UC-T04 / Check-in: Khách đến trạm mở tủ nhận chỗ.
     /// </summary>
@@ -587,47 +565,9 @@ public class BookingService : IBookingService
     /// </summary>
     public async Task<ApiResponse<BookingDto>> CheckOutBookingAsync(Guid userId, Guid bookingId)
     {
-        var booking = await _context.Bookings
-            .Include(b => b.Station)
-            .Include(b => b.Locker)
-            .Include(b => b.Payments)
-            .Include(b => b.AccessCredential)
-            .FirstOrDefaultAsync(b => b.Id == bookingId);
-
-        if (booking == null)
-            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy thông tin đặt tủ.");
-
-        if (booking.UserId != userId)
-            return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền thực hiện thao tác trên đơn này.");
-
-        if (booking.Status == BookingStatus.COMPLETED)
-            return ApiResponse<BookingDto>.SuccessResponse(MapToBookingDto(booking), "Đơn đã hoàn tất trước đó.");
-
-        if (booking.Status != BookingStatus.STORED)
-            return ApiResponse<BookingDto>.ErrorResponse($"Không thể trả tủ ở trạng thái hiện tại ({booking.Status}).");
-
-        var now = DateTime.UtcNow;
-        booking.CheckedOutAt = now;
-        booking.Status = BookingStatus.COMPLETED;
-        booking.UpdatedAt = now;
-
-        if (booking.Locker != null)
-        {
-            booking.Locker.BusinessStatus = LockerBusinessStatus.AVAILABLE;
-            booking.Locker.UpdatedAt = now;
-        }
-
-        if (booking.AccessCredential != null)
-        {
-            booking.AccessCredential.IsActive = false;
-            booking.AccessCredential.RevokedAt = now;
-            booking.AccessCredential.RevokeReason = "Normal checkout completed";
-        }
-
-        await _context.SaveChangesAsync();
-        _logger.LogInformation("Booking {Code} completed checkout at {Time}.", booking.BookingCode, now);
-
-        return ApiResponse<BookingDto>.SuccessResponse(MapToBookingDto(booking), "Trả tủ thành công. Cảm ơn bạn đã sử dụng dịch vụ!");
+        if (!await _context.Bookings.AnyAsync(b => b.Id == bookingId && b.UserId == userId))
+            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy đơn hoặc bạn không có quyền truy cập.");
+        return ApiResponse<BookingDto>.ErrorResponse("Vui lòng xác thực vé tại Kiosk, thanh toán phụ phí nếu có và đóng cửa tủ để hoàn tất lấy đồ.");
     }
 
     private BookingDto MapToBookingDto(Booking booking)

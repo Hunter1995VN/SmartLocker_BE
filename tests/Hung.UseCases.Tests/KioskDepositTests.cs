@@ -22,7 +22,7 @@ public class KioskDepositTests : IDisposable
     private readonly Mock<IPricingService> pricing = new();
     private readonly Booking booking;
     private readonly Locker locker;
-    private KioskService Service => new(db, mqtt.Object, notifications.Object, pricing.Object, Mock.Of<IOfflineTicketService>(), NullLogger<KioskService>.Instance);
+    private KioskService Service => new(db, mqtt.Object, notifications.Object, pricing.Object, NullLogger<KioskService>.Instance);
 
     public KioskDepositTests()
     {
@@ -173,5 +173,18 @@ public class KioskDepositTests : IDisposable
         Assert.True(status.Success); Assert.False(status.Data!.Complete); Assert.Equal("CHECK_IN", status.Data.Operation);
     }
 
+    [Theory] [InlineData(true)] [InlineData(false)]
+    public async Task EmptyOpenCompartmentCannotBeAssignedToANewDeposit(bool dynamicAllocation)
+    {
+        locker.DoorState = "OPEN";
+        if (dynamicAllocation) { booking.Locker = null; booking.LockerId = null; locker.BusinessStatus = LockerBusinessStatus.AVAILABLE; }
+        await db.SaveChangesAsync(); Assert.False((await Service.CheckInAsync(Request())).Success); mqtt.VerifyNoOtherCalls();
+    }
+    [Fact] public async Task AssignedCompartmentCannotBelongToAnotherActiveBooking()
+    {
+        db.Bookings.Add(new Booking { Id = Guid.NewGuid(), LockerId = locker.Id, StationId = booking.StationId,
+            Status = BookingStatus.STORED, BookingCode = "UNIT-OTHER" });
+        await db.SaveChangesAsync(); Assert.False((await Service.CheckInAsync(Request())).Success); mqtt.VerifyNoOtherCalls();
+    }
     public void Dispose() => db.Dispose();
 }

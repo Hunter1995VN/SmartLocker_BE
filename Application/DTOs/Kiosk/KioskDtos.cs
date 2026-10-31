@@ -36,6 +36,7 @@ public class KioskCheckInResponse
 
 public class KioskCheckOutRequest
 {
+    public string? SessionToken { get; set; }
     public Guid StationId { get; set; }
     public string CredentialType { get; set; } = "QR"; // "QR" or "ACCESS_CODE"
     public string Payload { get; set; } = string.Empty;
@@ -43,6 +44,7 @@ public class KioskCheckOutRequest
 
 public class KioskCheckOutResponse
 {
+    public string? SessionToken { get; set; }
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
     public Guid? LockerId { get; set; }
@@ -53,6 +55,11 @@ public class KioskCheckOutResponse
     public string? CheckoutUrl { get; set; }
     public string? DoorState { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+public class KioskFeePaymentRequest : KioskCheckOutRequest
+{
+    public Guid BookingId { get; set; }
 }
 
 public class KioskManualConfirmRequest
