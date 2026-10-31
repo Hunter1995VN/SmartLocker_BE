@@ -5,9 +5,17 @@ using Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("kiosk")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("api/kiosk")]
 public class KioskController : ControllerBase
 {
+    [HttpPost("operation-status")]
+    public async Task<IActionResult> OperationStatus(KioskOperationStatusRequest request)
+    {
+        var result = await _kioskService.GetOperationStatusAsync(request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
     private readonly IKioskService _kioskService;
     private readonly ILogger<KioskController> _logger;
 

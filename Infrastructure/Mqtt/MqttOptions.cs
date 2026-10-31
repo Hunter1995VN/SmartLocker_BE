@@ -8,6 +8,7 @@ public sealed class MqttOptions
     public string ClientId { get; set; } = $"smartlocker-be-{Guid.NewGuid():N}";
     public string Topic { get; set; } = "smartlocker/test";
     public string DoorEventTopic { get; set; } = "smartlocker/devices/+/door";
+    public string HeartbeatTopic { get; set; } = "smartlocker/devices/+/heartbeat";
     public string? Username { get; set; }
     public string? Password { get; set; }
     public int ReconnectDelaySeconds { get; set; } = 5;

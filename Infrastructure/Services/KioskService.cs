@@ -122,138 +122,89 @@ public class KioskService : IKioskService
         }
     }
 
+    public async Task<ApiResponse<KioskOperationStatusResponse>> GetOperationStatusAsync(KioskOperationStatusRequest request)
+    {
+        if (request.SessionToken?.Length != 64) return ApiResponse<KioskOperationStatusResponse>.ErrorResponse("Phiên thao tác không hợp lệ.");
+        var hash = OnlineTicket.HashPin(request.SessionToken);
+        var booking = await _context.Bookings.Include(b => b.Locker).FirstOrDefaultAsync(b => b.Id == request.BookingId
+            && b.StationId == request.StationId && b.KioskSessionHash == hash && b.KioskSessionExpiresAt > DateTime.UtcNow);
+        if (booking == null) return ApiResponse<KioskOperationStatusResponse>.ErrorResponse("Phiên thao tác đã hết hạn.");
+        var pickup = booking.CheckedOutAt != null;
+        return ApiResponse<KioskOperationStatusResponse>.SuccessResponse(new() {
+            BookingStatus = booking.Status.ToString(), Operation = pickup ? "CHECK_OUT" : "CHECK_IN",
+            DoorState = booking.Locker?.DoorState ?? "UNKNOWN",
+            Complete = pickup ? booking.Status is BookingStatus.COMPLETED or BookingStatus.COMPLETED_MANUAL : booking.Status == BookingStatus.STORED,
+            ManualReviewPending = booking.Status == BookingStatus.STORED && !string.IsNullOrEmpty(booking.ManualConfirmPhotoUrl)
+        });
+    }
+
+    private async Task<Booking?> FindAuthorizedBookingAsync(Guid stationId, string? type, string payload, bool sensorReport = false)
+    {
+        var now = DateTime.UtcNow;
+        var query = _context.Bookings.Include(b => b.AccessCredential).Include(b => b.Locker)
+            .Include(b => b.Station).Include(b => b.Payments)
+            .Where(b => b.StationId == stationId && b.AccessCredential != null
+                && b.AccessCredential.IsActive && b.AccessCredential.RevokedAt == null
+                && (b.AccessCredential.AuthLockUntil == null || b.AccessCredential.AuthLockUntil <= now));
+        if (string.Equals(type, "QR", StringComparison.OrdinalIgnoreCase))
+            return await query.FirstOrDefaultAsync(b => b.AccessCredential!.QrPayload == payload
+                && (b.AccessCredential.QrExpiresAt > now || (sensorReport && b.CheckedOutAt > now.AddMinutes(-15))));
+        if (!string.Equals(type, "ACCESS_CODE", StringComparison.OrdinalIgnoreCase)
+            || payload.Length != 8 || payload.Any(c => c < '0' || c > '9')) return null;
+        var hash = OnlineTicket.HashPin(payload);
+        // Reject ambiguous PINs rather than selecting an arbitrary booking.
+        var matches = await query.Where(b => b.AccessCredential!.AccessCodeHash == hash
+            && (b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED)).Take(2).ToListAsync();
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
     public async Task<ApiResponse<KioskCheckInResponse>> CheckInAsync(KioskCheckInRequest request)
+    {
+        var commandId = Guid.NewGuid().ToString("N");
+        return await _context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            if (_context.Database.IsRelational() && _context is DbContext tracked) tracked.ChangeTracker.Clear();
+            await using var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
+            var result = await CheckInCoreAsync(request, commandId);
+            if (result.Success && transaction != null) await transaction.CommitAsync();
+            return result;
+        });
+    }
+
+    private async Task<ApiResponse<KioskCheckInResponse>> CheckInCoreAsync(KioskCheckInRequest request, string commandId)
     {
         if (request.StationId == Guid.Empty || string.IsNullOrWhiteSpace(request.Payload))
             return ApiResponse<KioskCheckInResponse>.ErrorResponse("Dữ liệu xác thực không hợp lệ.");
 
-        Booking? booking = null;
-
-        if (request.CredentialType.Equals("QR", StringComparison.OrdinalIgnoreCase))
-        {
-            var parsed = ParseQrPayload(request.Payload);
-            if (parsed == null)
-                return ApiResponse<KioskCheckInResponse>.ErrorResponse("Mã QR không đúng định dạng.");
-
-            booking = await _context.Bookings
-                .Include(b => b.AccessCredential)
-                .Include(b => b.Locker)
-                .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => (parsed.BookingId.HasValue && b.Id == parsed.BookingId.Value) ||
-                                          (!string.IsNullOrEmpty(parsed.BookingCode) && b.BookingCode == parsed.BookingCode));
-        }
-        else // ACCESS_CODE
-        {
-            var rawInput = request.Payload.Trim();
-            var code = rawInput.ToUpper();
-            var clean = rawInput.Replace(" ", "").Replace("-", "").ToUpper();
-
-            booking = await _context.Bookings
-                .Include(b => b.AccessCredential)
-                .Include(b => b.Locker)
-                .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => 
-                    b.BookingCode == code ||
-                    b.BookingCode.Replace("-", "") == clean ||
-                    (clean.Length >= 6 && b.BookingCode.Replace("-", "").EndsWith(clean)) ||
-                    (b.AccessCredential != null && (
-                        b.AccessCredential.OfflinePayload == code ||
-                        b.AccessCredential.OfflinePayload.Replace(" ", "").ToUpper() == clean ||
-                        b.AccessCredential.AccessCodeHash == code
-                    ))
-                );
-        }
+        var booking = await FindAuthorizedBookingAsync(request.StationId, request.CredentialType, request.Payload.Trim());
 
         if (booking == null)
             return ApiResponse<KioskCheckInResponse>.ErrorResponse("Không tìm thấy thông tin đơn đặt chỗ tương ứng. Vui lòng kiểm tra lại mã PIN hoặc mã đặt chỗ.");
 
-        // Nếu đơn thuộc trạm khác, kiểm tra hoặc hỗ trợ chuyển trạm
-        if (!booking.BookingCode.StartsWith("BK-TEST") && booking.StationId != request.StationId)
-        {
-            return ApiResponse<KioskCheckInResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'. Vui lòng bấm vào góc trên bên trái màn hình Kiosk để chọn đúng trạm '{booking.Station?.Name}'.");
-        }
+        if (booking.Status != BookingStatus.CONFIRMED)
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Chỉ có thể gửi đồ với đơn đã thanh toán và được xác nhận.");
+        if (booking.Station.Status != StationStatus.ACTIVE)
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Trạm hiện không hoạt động.");
 
-        // Tự động kích hoạt (Auto-confirm) đơn mới tạo ở trạng thái PENDING_PAYMENT để hỗ trợ demo tiện lợi
-        if (booking.Status == BookingStatus.PENDING_PAYMENT)
-        {
-            booking.Status = BookingStatus.CONFIRMED;
-            if (booking.AccessCredential == null)
-            {
-                var pin = Guid.NewGuid().ToString("N")[..8].ToUpper();
-                booking.AccessCredential = new AccessCredential
-                {
-                    BookingId = booking.Id,
-                    OfflinePayload = pin,
-                    OfflineNonce = Guid.NewGuid().ToString("N"),
-                    AccessCodeHash = pin,
-                    QrPayload = pin,
-                    QrNonce = Guid.NewGuid().ToString("N"),
-                    QrExpiresAt = booking.EndAt,
-                    IsActive = true,
-                    IssuedAt = DateTime.UtcNow
-                };
-                _context.AccessCredentials.Add(booking.AccessCredential);
-            }
-            _logger.LogInformation("Booking {Code} auto-confirmed at Kiosk for instant check-in", booking.BookingCode);
-        }
-
-        // Auto-rearm test booking BK-TEST-CHECKIN for seamless repeated testing
-        if (booking.BookingCode == "BK-TEST-CHECKIN")
-        {
-            booking.Status = BookingStatus.CONFIRMED;
-            booking.StationId = request.StationId;
-            var iotLocker = await _context.Lockers
-                .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
-            if (iotLocker == null)
-            {
-                iotLocker = await _context.Lockers
-                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
-            }
-            if (iotLocker != null)
-            {
-                booking.LockerId = iotLocker.Id;
-                booking.Locker = iotLocker;
-                iotLocker.BusinessStatus = LockerBusinessStatus.RESERVED;
-            }
-            booking.CheckedInAt = null;
-            booking.StartAt = DateTime.UtcNow;
-            booking.EndAt = DateTime.UtcNow.AddHours(4);
-        }
-        else
-        {
-            if (booking.Status == BookingStatus.STORED)
-                return ApiResponse<KioskCheckInResponse>.ErrorResponse("Hành lý đã được gửi trong tủ từ trước. Vui lòng chọn 'Lấy đồ (Check-out)'.");
-
-            if (booking.Status != BookingStatus.CONFIRMED)
-                return ApiResponse<KioskCheckInResponse>.ErrorResponse($"Trạng thái đơn không hợp lệ để check-in: {booking.Status}");
-        }
+        if (booking.CheckedInAt > DateTime.UtcNow.AddSeconds(-30))
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Đang chờ thiết bị phản hồi. Không gửi lại lệnh mở tủ.");
+        var paidAt = booking.Payments.Where(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID)
+            .Select(p => p.PaidAt).Max();
+        if (paidAt == null || DateTime.UtcNow > paidAt.Value.AddMinutes(30))
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Đơn chưa thanh toán hoặc đã hết thời gian nhận tủ 30 phút.");
 
         // Dynamic Allocation (Gán tủ động nếu chưa có)
         Locker? assignedLocker = booking.Locker;
         if (assignedLocker == null)
         {
-            // Ưu tiên ô tủ có gắn thiết bị IoT thực tế
             assignedLocker = await _context.Lockers
-                .Where(l => l.StationId == request.StationId &&
-                            (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"))
-                .FirstOrDefaultAsync();
-
-            if (assignedLocker == null)
-            {
-                assignedLocker = await _context.Lockers
-                    .Where(l => l.StationId == request.StationId &&
-                                l.Size == booking.Size &&
-                                l.BusinessStatus == LockerBusinessStatus.AVAILABLE &&
-                                l.HealthStatus == LockerHealthStatus.HEALTHY)
-                    .OrderBy(l => l.LockerCode)
-                    .FirstOrDefaultAsync();
-            }
-
-            if (assignedLocker == null)
-            {
-                assignedLocker = await _context.Lockers
-                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
-            }
+                .Where(l => l.StationId == request.StationId && l.Size == booking.Size
+                    && l.BusinessStatus == LockerBusinessStatus.AVAILABLE
+                    && l.HealthStatus == LockerHealthStatus.HEALTHY
+                    && _context.IoTDevices.Any(d => d.Id == l.IoTDeviceId && d.StationId == request.StationId
+                        && d.ConnectivityStatus == "ONLINE" && d.LastSeenAt >= DateTime.UtcNow.AddSeconds(-60)))
+                .OrderBy(l => l.LockerCode).FirstOrDefaultAsync();
 
             if (assignedLocker == null)
                 return ApiResponse<KioskCheckInResponse>.ErrorResponse($"Hiện trạm không còn ô tủ cỡ {booking.Size} khả dụng.");
@@ -263,31 +214,49 @@ public class KioskService : IKioskService
             assignedLocker.BusinessStatus = LockerBusinessStatus.RESERVED;
         }
 
+        if (assignedLocker.StationId != request.StationId || assignedLocker.Size != booking.Size
+            || assignedLocker.HealthStatus != LockerHealthStatus.HEALTHY
+            || assignedLocker.BusinessStatus is not (LockerBusinessStatus.RESERVED or LockerBusinessStatus.AVAILABLE))
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Ô tủ được gán không khả dụng.");
         booking.CheckedInAt = DateTime.UtcNow;
 
         // Find device code to send command
         var iotDevice = await _context.IoTDevices
-            .FirstOrDefaultAsync(d => d.Id == assignedLocker.IoTDeviceId || d.StationId == request.StationId);
-        var deviceCode = iotDevice?.DeviceCode ?? "SIM-MQTT-001";
+            .FirstOrDefaultAsync(d => d.Id == assignedLocker.IoTDeviceId && d.StationId == request.StationId);
+        if (iotDevice == null)
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Ô tủ chưa được ánh xạ thiết bị tại trạm.");
+        if (iotDevice.ConnectivityStatus != "ONLINE" || iotDevice.LastSeenAt == null || iotDevice.LastSeenAt < DateTime.UtcNow.AddSeconds(-60))
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Thiết bị tại ô tủ chưa kết nối. Vui lòng liên hệ nhân viên.");
+        var deviceCode = iotDevice.DeviceCode;
+        var sessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        booking.KioskSessionHash = OnlineTicket.HashPin(sessionToken);
+        booking.KioskSessionExpiresAt = DateTime.UtcNow.AddMinutes(15);
 
         // Save state
         await _context.SaveChangesAsync();
 
         // Dispatch MQTT Unlock command
-        await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, assignedLocker.Id, assignedLocker.Size.ToString());
+        if (!await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, assignedLocker.Id, assignedLocker.LockerCode, commandId))
+        {
+            booking.CheckedInAt = null;
+            await _context.SaveChangesAsync();
+            return ApiResponse<KioskCheckInResponse>.ErrorResponse("Không gửi được lệnh mở tủ. Vui lòng thử lại hoặc liên hệ nhân viên.");
+        }
 
         // Dispatch SignalR
-        await _notificationService.NotifyLockerUnlockedAsync(request.StationId, assignedLocker.Id, assignedLocker.LockerCode);
+        try { await _notificationService.NotifyLockerUnlockedAsync(request.StationId, assignedLocker.Id, assignedLocker.LockerCode); }
+        catch (Exception ex) { _logger.LogWarning("Unlock notification failed ({ErrorType}); operation remains pending sensor confirmation.", ex.GetType().Name); }
 
         return ApiResponse<KioskCheckInResponse>.SuccessResponse(new KioskCheckInResponse
         {
+            SessionToken = sessionToken,
             BookingId = booking.Id,
             BookingCode = booking.BookingCode,
             LockerId = assignedLocker.Id,
             LockerCode = assignedLocker.LockerCode,
             LockerSize = assignedLocker.Size.ToString(),
             DoorState = assignedLocker.DoorState,
-            Message = $"Xác thực thành công! Ô tủ {assignedLocker.LockerCode} đã mở. Vui lòng đặt đồ và đóng chặt cửa."
+            Message = $"Xác thực thành công! Đã gửi lệnh mở ô tủ {assignedLocker.LockerCode}. Vui lòng đặt đồ và đóng chặt cửa."
         }, "Check-in thành công");
     }
 
@@ -487,12 +456,19 @@ public class KioskService : IKioskService
         if (station == null)
             return ApiResponse<KioskStationStatusResponse>.ErrorResponse("Không tìm thấy trạm.");
 
+        var devices = await _context.IoTDevices.Where(d => d.StationId == stationId)
+            .Select(d => new { d.ConnectivityStatus, d.LastSeenAt }).ToListAsync();
+        var cutoff = DateTime.UtcNow.AddSeconds(-60);
+        var onlineCount = devices.Count(d => d.ConnectivityStatus == "ONLINE" && d.LastSeenAt >= cutoff);
+        var connectivity = devices.Count == 0 || onlineCount == 0 ? "OFFLINE"
+            : onlineCount == devices.Count ? "ONLINE" : "DEGRADED";
+
         var response = new KioskStationStatusResponse
         {
             StationId = station.Id,
             StationName = station.Name,
             StationAddress = station.Address,
-            ConnectivityStatus = "ONLINE",
+            ConnectivityStatus = connectivity,
             Lockers = station.Lockers.Select(l => new KioskLockerItemDto
             {
                 LockerId = l.Id,

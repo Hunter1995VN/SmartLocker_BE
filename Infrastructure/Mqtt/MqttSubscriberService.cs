@@ -58,9 +58,12 @@ public sealed class MqttSubscriberService(
                                 return;
                             }
                             using var scope = scopeFactory.CreateScope();
-                            await scope.ServiceProvider.GetRequiredService<DoorEventHandler>().HandleAsync(
-                                args.ApplicationMessage.Topic, args.ApplicationMessage.ConvertPayloadToString(),
-                                args.ApplicationMessage.Retain, stoppingToken);
+                            if (args.ApplicationMessage.Topic.EndsWith("/heartbeat", StringComparison.Ordinal))
+                                await scope.ServiceProvider.GetRequiredService<HeartbeatEventHandler>().HandleAsync(
+                                    args.ApplicationMessage.Topic, args.ApplicationMessage.ConvertPayloadToString(), args.ApplicationMessage.Retain, stoppingToken);
+                            else
+                                await scope.ServiceProvider.GetRequiredService<DoorEventHandler>().HandleAsync(
+                                    args.ApplicationMessage.Topic, args.ApplicationMessage.ConvertPayloadToString(), args.ApplicationMessage.Retain, stoppingToken);
                         }
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
                         catch (Exception ex)
@@ -84,6 +87,8 @@ public sealed class MqttSubscriberService(
                         .WithTopicFilter(filter => filter.WithTopic(settings.Topic)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .WithTopicFilter(filter => filter.WithTopic(settings.DoorEventTopic)
+                            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
+                        .WithTopicFilter(filter => filter.WithTopic(settings.HeartbeatTopic)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .Build(), stoppingToken);
                     if (subscription.Items.Any(item => (int)item.ResultCode >= 128))
