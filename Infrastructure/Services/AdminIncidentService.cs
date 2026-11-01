@@ -81,11 +81,19 @@ public class AdminIncidentService : IAdminIncidentService
         if (locker == null)
             return ApiResponse<IncidentDto>.ErrorResponse("Không tìm thấy ô tủ");
 
-        var station = await _db.Stations.AsNoTracking().FirstOrDefaultAsync(s => s.Id == request.StationId);
+        var targetStationId = request.StationId == Guid.Empty ? locker.StationId : request.StationId;
+        var station = await _db.Stations.AsNoTracking().FirstOrDefaultAsync(s => s.Id == targetStationId);
         if (station == null)
             return ApiResponse<IncidentDto>.ErrorResponse("Không tìm thấy trạm");
 
         var reporter = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == reportedByUserId);
+
+        // Chuẩn hóa BookingId tránh lỗi FK nếu không tìm thấy
+        Guid? validBookingId = request.BookingId == Guid.Empty ? null : request.BookingId;
+        if (validBookingId.HasValue && !await _db.Bookings.AnyAsync(b => b.Id == validBookingId.Value))
+        {
+            validBookingId = null;
+        }
 
         // Đảm bảo Type tương thích với SQL Server CHECK constraint chk_Incidents_Type
         var safeType = request.Type;
@@ -100,9 +108,9 @@ public class AdminIncidentService : IAdminIncidentService
         {
             Id = Guid.NewGuid(),
             IncidentCode = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpper()}",
-            BookingId = request.BookingId,
-            LockerId = request.LockerId,
-            StationId = request.StationId,
+            BookingId = validBookingId,
+            LockerId = locker.Id,
+            StationId = station.Id,
             ReportedByUserId = reportedByUserId,
             Type = safeType,
             Status = IncidentStatus.OPEN,
