@@ -15,6 +15,7 @@ public class SecurityIncident
     public string Severity { get; set; } = "MEDIUM"; // LOW, MEDIUM, HIGH, CRITICAL
     public string Description { get; set; } = string.Empty;
     public string? ResolutionNote { get; set; }
+    public string? EvidenceImageUrl { get; set; }
     public Guid? ResolvedByUserId { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public bool RemoteUnlocked { get; set; }

@@ -27,6 +27,7 @@ public class SecurityIncidentConfiguration : IEntityTypeConfiguration<SecurityIn
         builder.Property(x => x.Severity).HasMaxLength(50).HasDefaultValue("MEDIUM");
         builder.Property(x => x.Description).HasMaxLength(1000);
         builder.Property(x => x.ResolutionNote).HasMaxLength(1000);
+        builder.Property(x => x.EvidenceImageUrl);
 
         builder.HasOne(x => x.Station)
             .WithMany()

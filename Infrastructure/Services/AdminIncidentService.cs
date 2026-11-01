@@ -65,6 +65,7 @@ public class AdminIncidentService : IAdminIncidentService
                 Severity = i.Severity,
                 Description = i.Description,
                 ResolutionNote = i.ResolutionNote,
+                EvidenceImageUrl = i.EvidenceImageUrl,
                 ResolvedBy = i.ResolvedByUser != null ? i.ResolvedByUser.FullName : null,
                 ResolvedAt = i.ResolvedAt,
                 RemoteUnlocked = i.RemoteUnlocked,
@@ -116,6 +117,7 @@ public class AdminIncidentService : IAdminIncidentService
             Status = IncidentStatus.OPEN,
             Severity = string.IsNullOrWhiteSpace(request.Severity) ? "MEDIUM" : request.Severity.ToUpperInvariant(),
             Description = description,
+            EvidenceImageUrl = request.EvidenceImageUrl,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -149,6 +151,7 @@ public class AdminIncidentService : IAdminIncidentService
             Status = incident.Status.ToString(),
             Severity = incident.Severity,
             Description = incident.Description,
+            EvidenceImageUrl = incident.EvidenceImageUrl,
             RemoteUnlocked = false,
             CreatedAt = incident.CreatedAt
         };
@@ -221,6 +224,7 @@ public class AdminIncidentService : IAdminIncidentService
             Severity = incident.Severity,
             Description = incident.Description,
             ResolutionNote = incident.ResolutionNote,
+            EvidenceImageUrl = incident.EvidenceImageUrl,
             ResolvedBy = resolver?.FullName,
             ResolvedAt = incident.ResolvedAt,
             RemoteUnlocked = incident.RemoteUnlocked,
