@@ -10,6 +10,7 @@ public class CreateIncidentRequest
     public IncidentType Type { get; set; }
     public string Severity { get; set; } = "MEDIUM";
     public string Description { get; set; } = string.Empty;
+    public string? EvidenceImageUrl { get; set; }
 }
 
 public class RemoteUnlockRequest
@@ -39,6 +40,7 @@ public class IncidentDto
     public string Severity { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string? ResolutionNote { get; set; }
+    public string? EvidenceImageUrl { get; set; }
     public string? ResolvedBy { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public bool RemoteUnlocked { get; set; }
