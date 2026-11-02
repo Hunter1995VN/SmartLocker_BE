@@ -190,6 +190,27 @@ public class PaymentService : IPaymentService
                 Message = "Xác nhận thanh toán thành công từ cổng PayOS!"
             });
         }
+        else if (string.Equals(payosStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(payosStatus, "EXPIRED", StringComparison.OrdinalIgnoreCase) ||
+                 (payment.ExpiresAt.HasValue && payment.ExpiresAt.Value < DateTime.UtcNow) ||
+                 payment.CreatedAt < DateTime.UtcNow.AddMinutes(-30))
+        {
+            payment.Status = PaymentStatus.EXPIRED;
+            payment.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
+            {
+                PaymentId = payment.Id,
+                BookingId = payment.BookingId,
+                BookingCode = payment.Booking?.BookingCode,
+                OrderCode = payment.OrderCode,
+                Amount = payment.Amount,
+                Status = payment.Status.ToString(),
+                IsSuccess = false,
+                Message = $"Giao dịch đã hết hạn thanh toán trên cổng PayOS ({payosStatus ?? "EXPIRED"})."
+            });
+        }
 
         return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
         {

@@ -170,9 +170,12 @@ public class AdminReconciliationService : IAdminReconciliationService
 
                 // Kiểm tra xem trên PayOS đã CANCELLED / EXPIRED hay đã quá hạn lâu chưa
                 var gatewayStatus = await _paymentGateway.GetPaymentStatusAsync(numericOrderCode);
+                var isTimedOut = (payment.ExpiresAt.HasValue && payment.ExpiresAt.Value < now)
+                                 || payment.CreatedAt < now.AddMinutes(-30);
+
                 if (string.Equals(gatewayStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(gatewayStatus, "EXPIRED", StringComparison.OrdinalIgnoreCase) ||
-                    (payment.ExpiresAt.HasValue && payment.ExpiresAt.Value < now.AddMinutes(-15)))
+                    isTimedOut)
                 {
                     payment.Status = PaymentStatus.EXPIRED;
                     payment.UpdatedAt = now;
@@ -231,7 +234,7 @@ public class AdminReconciliationService : IAdminReconciliationService
         var orderCodeStr = orderCode.ToString();
         var syncRes = await _paymentService.SyncPaymentStatusAsync(orderCode);
 
-        var payment = await _db.Payments.AsNoTracking()
+        var payment = await _db.Payments
             .Include(p => p.Booking)
                 .ThenInclude(b => b.User)
             .Include(p => p.Booking)
@@ -240,6 +243,23 @@ public class AdminReconciliationService : IAdminReconciliationService
 
         if (payment == null)
             return ApiResponse<PaymentReconciliationItemDto>.ErrorResponse($"Không tìm thấy giao dịch với mã OrderCode {orderCode}");
+
+        var now = DateTime.UtcNow;
+        if (payment.Status == PaymentStatus.PENDING)
+        {
+            var gatewayStatus = await _paymentGateway.GetPaymentStatusAsync(orderCode);
+            var isTimedOut = (payment.ExpiresAt.HasValue && payment.ExpiresAt.Value < now)
+                             || payment.CreatedAt < now.AddMinutes(-30);
+
+            if (string.Equals(gatewayStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(gatewayStatus, "EXPIRED", StringComparison.OrdinalIgnoreCase) ||
+                isTimedOut)
+            {
+                payment.Status = PaymentStatus.EXPIRED;
+                payment.UpdatedAt = now;
+                await _db.SaveChangesAsync();
+            }
+        }
 
         await _auditLog.LogAsync(
             actorId,
