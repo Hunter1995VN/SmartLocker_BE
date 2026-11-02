@@ -233,8 +233,11 @@ public class KioskService : IKioskService
         if (booking.Locker == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin ô tủ của đơn đặt.");
 
-        if (booking.Locker.StationId != request.StationId || booking.Locker.BusinessStatus != LockerBusinessStatus.OCCUPIED)
+        if (booking.Locker.StationId != request.StationId || booking.Locker.Size != booking.Size
+            || booking.Locker.BusinessStatus != LockerBusinessStatus.OCCUPIED)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Ô tủ không khớp trạng thái lưu trữ.");
+        if (booking.Locker.DoorState != "CLOSED")
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Cửa tủ đang mở hoặc chưa xác định. Vui lòng đóng cửa trước khi xác thực lấy đồ; nếu cảm biến lỗi hãy liên hệ nhân viên.");
         if (booking.CheckedOutAt > DateTime.UtcNow.AddSeconds(-30))
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Đang chờ thiết bị phản hồi. Không gửi lại lệnh mở tủ.");
 

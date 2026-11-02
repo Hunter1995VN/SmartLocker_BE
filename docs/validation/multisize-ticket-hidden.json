@@ -1,0 +1,16 @@
+[
+  {
+    "size": "M",
+    "status": "COMPLETED",
+    "pinHidden": true,
+    "qrHidden": true,
+    "offlineHidden": true
+  },
+  {
+    "size": "L",
+    "status": "COMPLETED",
+    "pinHidden": true,
+    "qrHidden": true,
+    "offlineHidden": true
+  }
+]

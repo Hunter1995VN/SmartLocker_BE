@@ -1,0 +1,26 @@
+[
+  {
+    "action": "check-in",
+    "credentialType": "ACCESS_CODE",
+    "httpStatus": 400,
+    "rejected": true
+  },
+  {
+    "action": "check-in",
+    "credentialType": "QR",
+    "httpStatus": 400,
+    "rejected": true
+  },
+  {
+    "action": "check-out",
+    "credentialType": "ACCESS_CODE",
+    "httpStatus": 400,
+    "rejected": true
+  },
+  {
+    "action": "check-out",
+    "credentialType": "QR",
+    "httpStatus": 400,
+    "rejected": true
+  }
+]

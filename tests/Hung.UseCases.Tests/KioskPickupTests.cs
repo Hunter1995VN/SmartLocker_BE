@@ -114,6 +114,18 @@ public class KioskPickupTests : IDisposable
         Assert.False((await Pickup()).Success); Assert.Null(booking.CheckedOutAt);
         Assert.Equal(BookingStatus.STORED, booking.Status); Assert.True(booking.AccessCredential!.IsActive);
     }
+    [Theory] [InlineData("OPEN")] [InlineData("UNKNOWN")]
+    public async Task PickupDoesNotPulseAnAlreadyOpenOrUnknownDoor(string state)
+    {
+        PreparePickup(); locker.DoorState = state; await db.SaveChangesAsync();
+        Assert.False((await Pickup()).Success); Assert.Null(booking.CheckedOutAt);
+        mqtt.VerifyNoOtherCalls();
+    }
+    [Fact] public async Task PickupRejectsAnAssignedCompartmentOfAnotherSize()
+    {
+        PreparePickup(); locker.Size = LockerSize.L; await db.SaveChangesAsync();
+        Assert.False((await Pickup()).Success); mqtt.VerifyNoOtherCalls();
+    }
     [Theory] [InlineData("OFFLINE")] [InlineData("STALE")]
     public async Task UnavailableDeviceCannotReceivePickup(string state)
     {
