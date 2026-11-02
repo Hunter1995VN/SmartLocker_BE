@@ -1,5 +1,7 @@
 namespace Domain.Entities;
 
+using System.ComponentModel.DataAnnotations.Schema;
+
 /// <summary>
 /// Thực thể Mã giảm giá / Voucher ánh xạ trực tiếp tới bảng Vouchers trong SQL Server.
 /// </summary>
@@ -18,6 +20,8 @@ public class Voucher
     public decimal MinOrderAmount { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
+    [NotMapped] public DateTime ValidFrom { get => StartDate; set => StartDate = value; }
+    [NotMapped] public DateTime ValidTo { get => EndDate; set => EndDate = value; }
     public int UsageLimit { get; set; }
     public int UsedCount { get; set; }
     public bool IsActive { get; set; }

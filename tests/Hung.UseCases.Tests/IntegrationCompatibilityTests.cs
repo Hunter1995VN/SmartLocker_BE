@@ -55,5 +55,13 @@ public sealed class IntegrationCompatibilityTests : IDisposable
         Assert.Equal(2, preview.DailyCancellationCount); Assert.True(preview.IsDailyLimitExceeded);
         Assert.Equal(0m, preview.RefundAmount);
     }
+    [Fact] public void VoucherDateAliasesCannotInventExtraSqlColumns()
+    {
+        var entity = db.Model.FindEntityType(typeof(Voucher))!;
+        Assert.NotNull(entity.FindProperty(nameof(Voucher.StartDate)));
+        Assert.NotNull(entity.FindProperty(nameof(Voucher.EndDate)));
+        Assert.Null(entity.FindProperty(nameof(Voucher.ValidFrom)));
+        Assert.Null(entity.FindProperty(nameof(Voucher.ValidTo)));
+    }
     public void Dispose() => db.Dispose();
 }
