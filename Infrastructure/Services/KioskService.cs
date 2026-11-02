@@ -17,6 +17,7 @@ public class KioskService : IKioskService
     private readonly IMqttPublishService _mqttPublishService;
     private readonly ILockerNotificationService _notificationService;
     private readonly IPricingService _pricingService;
+    private readonly IPaymentGatewayService _paymentGateway;
     private readonly ILogger<KioskService> _logger;
 
     public KioskService(
@@ -24,12 +25,14 @@ public class KioskService : IKioskService
         IMqttPublishService mqttPublishService,
         ILockerNotificationService notificationService,
         IPricingService pricingService,
+        IPaymentGatewayService paymentGateway,
         ILogger<KioskService> logger)
     {
         _context = context;
         _mqttPublishService = mqttPublishService;
         _notificationService = notificationService;
         _pricingService = pricingService;
+        _paymentGateway = paymentGateway;
         _logger = logger;
     }
 
@@ -127,7 +130,7 @@ public class KioskService : IKioskService
                 .Include(b => b.AccessCredential)
                 .Include(b => b.Locker)
                 .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => 
+                .FirstOrDefaultAsync(b =>
                     b.BookingCode == code ||
                     b.BookingCode.Replace("-", "") == clean ||
                     (clean.Length >= 6 && b.BookingCode.Replace("-", "").EndsWith(clean)) ||
@@ -207,7 +210,6 @@ public class KioskService : IKioskService
         Locker? assignedLocker = booking.Locker;
         if (assignedLocker == null)
         {
-            // Ưu tiên ô tủ có gắn thiết bị IoT thực tế
             assignedLocker = await _context.Lockers
                 .Where(l => l.StationId == request.StationId &&
                             (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"))
@@ -283,6 +285,8 @@ public class KioskService : IKioskService
                 .Include(b => b.AccessCredential)
                 .Include(b => b.Locker)
                 .Include(b => b.Station)
+                .Include(b => b.PricingPolicy)
+                .Include(b => b.Payments)
                 .FirstOrDefaultAsync(b => (parsed.BookingId.HasValue && b.Id == parsed.BookingId.Value) ||
                                           (!string.IsNullOrEmpty(parsed.BookingCode) && b.BookingCode == parsed.BookingCode));
         }
@@ -296,7 +300,9 @@ public class KioskService : IKioskService
                 .Include(b => b.AccessCredential)
                 .Include(b => b.Locker)
                 .Include(b => b.Station)
-                .FirstOrDefaultAsync(b => 
+                .Include(b => b.PricingPolicy)
+                .Include(b => b.Payments)
+                .FirstOrDefaultAsync(b =>
                     b.BookingCode == code ||
                     b.BookingCode.Replace("-", "") == clean ||
                     (clean.Length >= 6 && b.BookingCode.Replace("-", "").EndsWith(clean)) ||
@@ -314,18 +320,16 @@ public class KioskService : IKioskService
         if (!booking.BookingCode.StartsWith("BK-TEST") && booking.StationId != request.StationId)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse($"Đơn đặt này thuộc trạm '{booking.Station?.Name}'. Vui lòng bấm vào góc trên bên trái màn hình Kiosk để chọn đúng trạm '{booking.Station?.Name}'.");
 
+        var now = DateTime.UtcNow;
+
         // Auto-rearm test booking BK-TEST-CHECKOUT for seamless repeated testing
         if (booking.BookingCode == "BK-TEST-CHECKOUT")
         {
             booking.Status = BookingStatus.STORED;
             booking.StationId = request.StationId;
             var iotLocker = await _context.Lockers
-                .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"));
-            if (iotLocker == null)
-            {
-                iotLocker = await _context.Lockers
-                    .FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
-            }
+                .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"))
+                ?? await _context.Lockers.FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
             if (iotLocker != null)
             {
                 booking.LockerId = iotLocker.Id;
@@ -333,16 +337,46 @@ public class KioskService : IKioskService
                 iotLocker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
             }
             booking.CheckedOutAt = null;
-            booking.StartAt = DateTime.UtcNow.AddHours(-2);
-            booking.EndAt = DateTime.UtcNow.AddHours(2);
+            booking.StartAt = now.AddHours(-2);
+            booking.EndAt = now.AddHours(2);
             booking.IsOverdue = false;
         }
         else if (booking.BookingCode == "BK-TEST-OVERDUE")
         {
             booking.Status = BookingStatus.STORED;
-            booking.IsOverdue = true;
-            booking.StartAt = DateTime.UtcNow.AddHours(-6);
-            booking.EndAt = DateTime.UtcNow.AddHours(-2);
+            booking.StationId = request.StationId;
+            if (booking.Locker == null)
+            {
+                var iotLocker = await _context.Lockers
+                    .FirstOrDefaultAsync(l => l.StationId == request.StationId && (l.IoTDeviceId != null || l.LockerCode == "SIM-MQTT-01"))
+                    ?? await _context.Lockers.FirstOrDefaultAsync(l => l.LockerCode == "SIM-MQTT-01" || l.IoTDeviceId != null);
+                if (iotLocker != null)
+                {
+                    booking.LockerId = iotLocker.Id;
+                    booking.Locker = iotLocker;
+                    iotLocker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
+                }
+            }
+
+            // Kiểm tra xem người dùng vừa mới thanh toán phụ phí quá hạn cho BK-TEST-OVERDUE trong 3 phút gần đây chưa
+            var recentPaidOverdue = booking.Payments
+                .FirstOrDefault(p => p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PAID && p.PaidAt >= now.AddMinutes(-3));
+
+            if (recentPaidOverdue != null)
+            {
+                booking.IsOverdue = false;
+                booking.OverdueSince = null;
+                booking.EndAt = now.AddMinutes(15);
+                // Đánh dấu PaidAt lùi về trước để lần test 777777 tiếp theo từ màn hình chính lại vào luồng quá hạn
+                recentPaidOverdue.PaidAt = now.AddMinutes(-10);
+            }
+            else
+            {
+                booking.IsOverdue = true;
+                booking.StartAt = now.AddHours(-6);
+                booking.EndAt = now.AddHours(-2);
+                booking.OverdueSince = booking.EndAt.AddMinutes(15);
+            }
         }
         else
         {
@@ -356,11 +390,34 @@ public class KioskService : IKioskService
         if (booking.Locker == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin ô tủ của đơn đặt.");
 
-        // Check overdue
-        var now = DateTime.UtcNow;
-        var graceEnd = booking.EndAt.AddMinutes(15);
-        if (now > graceEnd && booking.IsOverdue)
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var graceMins = policy?.GracePeriodMinutes ?? 15;
+        var graceEnd = booking.EndAt.AddMinutes(graceMins);
+
+        if (now > graceEnd && !booking.IsOverdue)
         {
+            booking.IsOverdue = true;
+            booking.OverdueSince = graceEnd;
+            booking.UpdatedAt = now;
+            await _context.SaveChangesAsync();
+        }
+
+        // Check overdue (UC-T19)
+        if (booking.IsOverdue)
+        {
+            var feePerHour = policy?.OverdueFeePerHour ?? 10000m;
+            var overdueMinutes = Math.Max(1, (now - booking.EndAt).TotalMinutes - graceMins);
+            var overdueHours = Math.Max(1, (int)Math.Ceiling(overdueMinutes / 60.0));
+            var overdueFee = policy != null
+                ? _pricingService.CalculateOverdueFee(booking, policy)
+                : overdueHours * feePerHour;
+
+            if (overdueFee <= 0) overdueFee = overdueHours * feePerHour;
+            if (overdueFee < 2000m) overdueFee = 2000m;
+
+            // Tạo sẵn mã VietQR PayOS cho Kiosk để khách quét ngay trên màn hình cảm ứng
+            var payResponse = await CreateOverduePaymentInternalAsync(booking, overdueHours, feePerHour, overdueFee);
+
             return ApiResponse<KioskCheckOutResponse>.SuccessResponse(new KioskCheckOutResponse
             {
                 BookingId = booking.Id,
@@ -369,13 +426,37 @@ public class KioskService : IKioskService
                 LockerCode = booking.Locker.LockerCode,
                 LockerSize = booking.Locker.Size.ToString(),
                 IsOverdue = true,
-                OverdueFee = 20000, // standard overtime fee or calculated
-                Message = "Đơn của bạn đã quá hạn thuê. Vui lòng thanh toán phụ phí trước khi lấy đồ."
+                OverdueHours = overdueHours,
+                OverdueFeePerHour = feePerHour,
+                OverdueFee = overdueFee,
+                CheckoutUrl = payResponse?.PaymentUrl,
+                QrCode = payResponse?.QrCode,
+                AccountNumber = payResponse?.AccountNumber,
+                AccountName = payResponse?.AccountName,
+                Bin = payResponse?.Bin,
+                OrderCode = payResponse?.OrderCode,
+                PaymentExpiresAt = payResponse?.PaymentExpiresAt,
+                Message = $"Đơn của bạn đã quá hạn {overdueHours} giờ. Vui lòng quét mã VietQR thanh toán phụ phí {overdueFee:N0}đ để mở tủ lấy đồ."
             }, "Đơn đặt bị quá hạn.");
         }
 
-        booking.CheckedOutAt = DateTime.UtcNow;
+        booking.CheckedOutAt = now;
         var locker = booking.Locker;
+
+        if (!booking.BookingCode.StartsWith("BK-TEST"))
+        {
+            booking.Status = BookingStatus.COMPLETED;
+            booking.UpdatedAt = now;
+            locker.BusinessStatus = LockerBusinessStatus.AVAILABLE;
+            locker.UpdatedAt = now;
+
+            if (booking.AccessCredential != null)
+            {
+                booking.AccessCredential.IsActive = false;
+                booking.AccessCredential.RevokedAt = now;
+                booking.AccessCredential.RevokeReason = "Kiosk checkout completed";
+            }
+        }
 
         // Find device
         var iotDevice = await _context.IoTDevices
@@ -401,6 +482,163 @@ public class KioskService : IKioskService
             IsOverdue = false,
             Message = $"Mở khóa thành công! Ô tủ {locker.LockerCode} đã mở. Vui lòng lấy toàn bộ hành lý và đóng chặt cửa."
         }, "Check-out thành công");
+    }
+
+    public async Task<ApiResponse<KioskOverduePaymentResponse>> CreateOverduePaymentAsync(KioskOverduePaymentRequest request)
+    {
+        var booking = await FindBookingForKioskAsync(request);
+        if (booking == null)
+            return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Không tìm thấy đơn đặt tủ cần thanh toán phụ phí.");
+
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var graceMins = policy?.GracePeriodMinutes ?? 15;
+        var feePerHour = policy?.OverdueFeePerHour ?? 10000m;
+        var overdueMinutes = Math.Max(1, (DateTime.UtcNow - booking.EndAt).TotalMinutes - graceMins);
+        var overdueHours = Math.Max(1, (int)Math.Ceiling(overdueMinutes / 60.0));
+        var overdueFee = policy != null
+            ? _pricingService.CalculateOverdueFee(booking, policy)
+            : overdueHours * feePerHour;
+        if (overdueFee <= 0) overdueFee = overdueHours * feePerHour;
+        if (overdueFee < 2000m) overdueFee = 2000m;
+
+        var res = await CreateOverduePaymentInternalAsync(booking, overdueHours, feePerHour, overdueFee);
+        if (res == null)
+            return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Không thể khởi tạo mã VietQR thanh toán phụ phí.");
+
+        return ApiResponse<KioskOverduePaymentResponse>.SuccessResponse(res, "Tạo mã VietQR thanh toán phụ phí quá hạn thành công.");
+    }
+
+    public async Task<ApiResponse<bool>> ConfirmOverduePaymentDemoAsync(KioskOverduePaymentRequest request)
+    {
+        var booking = await FindBookingForKioskAsync(request);
+        if (booking == null)
+            return ApiResponse<bool>.ErrorResponse("Không tìm thấy đơn đặt tủ.");
+
+        var now = DateTime.UtcNow;
+        var pendingPayment = booking.Payments
+            .Where(p => p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PENDING)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefault();
+
+        if (pendingPayment != null)
+        {
+            pendingPayment.Status = PaymentStatus.PAID;
+            pendingPayment.PaidAt = now;
+            pendingPayment.WebhookReceivedAt = now;
+        }
+        else
+        {
+            var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+            var feePerHour = policy?.OverdueFeePerHour ?? 10000m;
+            _context.Payments.Add(new Payment
+            {
+                BookingId = booking.Id,
+                Kind = PaymentKind.OVERDUE,
+                Status = PaymentStatus.PAID,
+                Amount = feePerHour * 2,
+                OrderCode = long.Parse(now.ToString("yyMMddHHmm") + new Random().Next(1000, 9999)).ToString(),
+                PaidAt = now,
+                Gateway = "PAYOS"
+            });
+        }
+
+        booking.IsOverdue = false;
+        booking.OverdueSince = null;
+        booking.EndAt = now.AddMinutes(15);
+        booking.UpdatedAt = now;
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == booking.UserId);
+        if (user != null && user.OverdueDebt > 0)
+        {
+            user.OverdueDebt = 0;
+            user.UpdatedAt = now;
+        }
+
+        await _context.SaveChangesAsync();
+        return ApiResponse<bool>.SuccessResponse(true, "Đã xác nhận thanh toán phụ phí quá hạn thành công.");
+    }
+
+    private async Task<Booking?> FindBookingForKioskAsync(KioskOverduePaymentRequest request)
+    {
+        if (request.BookingId.HasValue && request.BookingId.Value != Guid.Empty)
+        {
+            return await _context.Bookings
+                .Include(b => b.PricingPolicy)
+                .Include(b => b.Payments)
+                .FirstOrDefaultAsync(b => b.Id == request.BookingId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BookingCode))
+        {
+            var code = request.BookingCode.Trim().ToUpper();
+            return await _context.Bookings
+                .Include(b => b.PricingPolicy)
+                .Include(b => b.Payments)
+                .FirstOrDefaultAsync(b => b.BookingCode == code);
+        }
+
+        return null;
+    }
+
+    private async Task<KioskOverduePaymentResponse?> CreateOverduePaymentInternalAsync(
+        Booking booking,
+        int overdueHours,
+        decimal feePerHour,
+        decimal overdueFee)
+    {
+        try
+        {
+            var oldPendings = booking.Payments
+                .Where(p => p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PENDING)
+                .ToList();
+            foreach (var old in oldPendings)
+            {
+                old.Status = PaymentStatus.EXPIRED;
+            }
+
+            var expiresAt = DateTime.UtcNow.AddMinutes(10);
+            var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + new Random().Next(1000, 9999).ToString());
+            var payment = new Payment
+            {
+                BookingId = booking.Id,
+                Kind = PaymentKind.OVERDUE,
+                Status = PaymentStatus.PENDING,
+                Amount = overdueFee,
+                OrderCode = orderCode.ToString(),
+                ExpiresAt = expiresAt,
+                Gateway = "PAYOS"
+            };
+            _context.Payments.Add(payment);
+            await _context.SaveChangesAsync();
+
+            var paymentResult = await _paymentGateway.CreatePaymentLinkAsync(
+                orderCode, (int)overdueFee, $"Qua han {booking.BookingCode}", "", "");
+
+            payment.PaymentLink = paymentResult.CheckoutUrl;
+            payment.GatewayTxnId = paymentResult.PaymentLinkId;
+            await _context.SaveChangesAsync();
+
+            return new KioskOverduePaymentResponse
+            {
+                BookingId = booking.Id,
+                BookingCode = booking.BookingCode,
+                OverdueHours = overdueHours,
+                OverdueFeePerHour = feePerHour,
+                Amount = overdueFee,
+                PaymentUrl = paymentResult.CheckoutUrl,
+                PaymentExpiresAt = expiresAt,
+                QrCode = paymentResult.QrCode,
+                AccountNumber = paymentResult.AccountNumber,
+                AccountName = paymentResult.AccountName,
+                Bin = paymentResult.Bin,
+                OrderCode = orderCode
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating overdue payment for booking {BookingCode} at Kiosk", booking.BookingCode);
+            return null;
+        }
     }
 
     public async Task<ApiResponse<bool>> ManualConfirmAsync(KioskManualConfirmRequest request)
