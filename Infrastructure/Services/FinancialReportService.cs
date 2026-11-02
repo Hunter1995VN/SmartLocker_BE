@@ -65,7 +65,7 @@ public class FinancialReportService : IFinancialReportService
         string? actorEmail,
         string? actorRole)
     {
-        var overview = await BuildOverviewInternalAsync(filter);
+        var overview = await BuildOverviewInternalAsync(filter, int.MaxValue);
         var fmt = (format ?? "excel").Trim().ToLowerInvariant();
         var dateTag = $"{overview.FromDate:yyyyMMdd}_{overview.ToDate:yyyyMMdd}";
 
@@ -110,7 +110,8 @@ public class FinancialReportService : IFinancialReportService
     }
 
     private async Task<FinancialReportOverviewDto> BuildOverviewInternalAsync(
-        FinancialReportFilterRequest filter)
+        FinancialReportFilterRequest filter,
+        int ledgerLimit = 300)
     {
         var nowVn = ToVnTime(DateTime.UtcNow);
         var toLocalDate = (filter.ToDate ?? nowVn).Date;
@@ -206,9 +207,23 @@ public class FinancialReportService : IFinancialReportService
                 }
             }
 
-            voucherSubsidy = latestByBooking.Values
+            var snaps = latestByBooking.Values
                 .Where(s => !s.IsReleased && s.RedeemedAt >= utcStart && s.RedeemedAt < utcEndExclusive)
-                .Sum(s => s.DiscountAmount);
+                .ToList();
+
+            if (filter.StationId.HasValue && filter.StationId.Value != Guid.Empty && snaps.Count > 0)
+            {
+                var stationFilterId = filter.StationId.Value;
+                var snapBookingIds = snaps.Select(s => s.BookingId).ToList();
+                var inStation = (await _db.Bookings.AsNoTracking()
+                        .Where(b => snapBookingIds.Contains(b.Id) && b.StationId == stationFilterId)
+                        .Select(b => b.Id)
+                        .ToListAsync())
+                    .ToHashSet();
+                snaps = snaps.Where(s => inStation.Contains(s.BookingId)).ToList();
+            }
+
+            voucherSubsidy = snaps.Sum(s => s.DiscountAmount);
         }
         catch (Exception ex)
         {
@@ -363,7 +378,7 @@ public class FinancialReportService : IFinancialReportService
         }).ToList();
 
         // === 7. Bóc tách theo Loại giao dịch ===
-        var totalFlowMagnitude = grossRevenue + totalRefunded;
+        var totalFlowMagnitude = grossRevenue;
         var kindBreakdown = new List<PaymentKindBreakdownDto>
         {
             new()
@@ -401,7 +416,7 @@ public class FinancialReportService : IFinancialReportService
         };
 
         // === 8. Sổ phụ chi tiết (tối đa 300 giao dịch mới nhất trong kỳ) ===
-        var ledgerItems = payments.Take(300).Select(p =>
+        var ledgerItems = payments.Take(ledgerLimit).Select(p =>
         {
             decimal netImpact = 0m;
             if (IsPaidRevenue(p)) netImpact = p.Amount;
