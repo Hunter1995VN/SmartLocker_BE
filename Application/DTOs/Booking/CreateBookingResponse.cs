@@ -6,7 +6,8 @@ public class CreateBookingResponse
     public string BookingCode { get; set; } = string.Empty;
     public decimal OriginalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
-    public string? VoucherCode { get; set; }
+    public string? AppliedVoucherCode { get; set; }
+    public string? VoucherCode { get => AppliedVoucherCode; set => AppliedVoucherCode = value; }
     public decimal Amount { get; set; }
     public string PaymentUrl { get; set; } = string.Empty;
     public DateTime PaymentExpiresAt { get; set; }

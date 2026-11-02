@@ -232,6 +232,9 @@ public class AdminStationLockerService : IAdminStationLockerService
         return ApiResponse<bool>.SuccessResponse(true, "Đã ngưng hoạt động trạm tủ");
     }
 
+    /// <summary>
+    /// UC-A03 & UC-A04: Cập nhật biểu giá thuê, mức phí phạt quá hạn và tỷ lệ hoàn tiền khi hủy đơn
+    /// </summary>
     public async Task<ApiResponse<bool>> UpdatePricingPolicyAsync(Guid stationId, UpdatePricingPolicyRequest request, Guid adminUserId)
     {
         var station = await _db.Stations.FirstOrDefaultAsync(s => s.Id == stationId);
@@ -248,15 +251,26 @@ public class AdminStationLockerService : IAdminStationLockerService
             existingPolicy.EffectiveTo = now;
         }
 
+        var earlyRate = Math.Clamp(request.RefundRateEarly, 0m, 1m);
+        var lateRate = Math.Clamp(request.RefundRateLate, 0m, 1m);
+        var cutoffHours = request.RefundCutoffHours > 0 ? request.RefundCutoffHours : (short)2;
+        var noShowMinutes = request.NoShowWindowMinutes > 0 ? request.NoShowWindowMinutes : (short)30;
+
         var newPolicy = new PricingPolicy
         {
             Id = Guid.NewGuid(),
             StationId = stationId,
             Size = request.Size,
             PricePerBlock = request.PricePerBlock,
-            BlockHours = request.BlockHours,
+            BlockHours = request.BlockHours > 0 ? request.BlockHours : (short)1,
             OverdueFeePerHour = request.OverdueFeePerHour,
-            GracePeriodMinutes = request.GracePeriodMinutes,
+            GracePeriodMinutes = request.GracePeriodMinutes >= 0 ? request.GracePeriodMinutes : (short)15,
+            RefundCutoffHours = cutoffHours,
+            RefundRateEarly = earlyRate,
+            RefundRateLate = lateRate,
+            NoShowWindowMinutes = noShowMinutes,
+            MinHours = request.MinHours > 0 ? request.MinHours : (short)1,
+            MaxHours = request.MaxHours >= request.MinHours ? request.MaxHours : (short)72,
             EffectiveFrom = now,
             CreatedBy = adminUserId,
             CreatedAt = now
@@ -265,9 +279,17 @@ public class AdminStationLockerService : IAdminStationLockerService
         _db.PricingPolicies.Add(newPolicy);
         await _db.SaveChangesAsync();
 
-        await _auditLog.LogAsync(adminUserId, null, "ADMIN", "UPDATE_PRICING", "PricingPolicy", newPolicy.Id.ToString(), $"Cập nhật bảng giá cỡ {request.Size} cho trạm {station.Name}: {request.PricePerBlock:N0}đ/block");
+        await _auditLog.LogAsync(
+            adminUserId,
+            null,
+            "ADMIN",
+            "UPDATE_PRICING",
+            "PricingPolicy",
+            newPolicy.Id.ToString(),
+            $"Cập nhật chính sách giá & phạt/hoàn hủy cỡ {request.Size} tại trạm {station.Name}: Giá={request.PricePerBlock:N0}đ, Phạt quá hạn={request.OverdueFeePerHour:N0}đ/h (Ân hạn {newPolicy.GracePeriodMinutes}p), Hoàn hủy trước {cutoffHours}h={earlyRate * 100:N0}%, sát giờ={lateRate * 100:N0}%"
+        );
 
-        return ApiResponse<bool>.SuccessResponse(true, "Cập nhật bảng giá thành công");
+        return ApiResponse<bool>.SuccessResponse(true, "Cập nhật biểu giá, phí phạt quá hạn và tỷ lệ hoàn hủy thành công");
     }
 
     public async Task<ApiResponse<List<LockerGridItemDto>>> GetStationLockersGridAsync(Guid stationId)
@@ -415,6 +437,24 @@ public class AdminStationLockerService : IAdminStationLockerService
             PriceS = policies.FirstOrDefault(p => p.Size == LockerSize.S)?.PricePerBlock,
             PriceM = policies.FirstOrDefault(p => p.Size == LockerSize.M)?.PricePerBlock,
             PriceL = policies.FirstOrDefault(p => p.Size == LockerSize.L)?.PricePerBlock,
+            PricingPolicies = policies
+                .OrderBy(p => p.Size)
+                .Select(p => new StationPricingPolicyDto
+                {
+                    Id = p.Id,
+                    Size = p.Size.ToString(),
+                    PricePerBlock = p.PricePerBlock,
+                    BlockHours = p.BlockHours,
+                    OverdueFeePerHour = p.OverdueFeePerHour,
+                    GracePeriodMinutes = p.GracePeriodMinutes,
+                    RefundCutoffHours = p.RefundCutoffHours,
+                    RefundRateEarly = p.RefundRateEarly,
+                    RefundRateLate = p.RefundRateLate,
+                    MinHours = p.MinHours,
+                    MaxHours = p.MaxHours,
+                    NoShowWindowMinutes = p.NoShowWindowMinutes,
+                    EffectiveFrom = p.EffectiveFrom
+                }).ToList(),
             CreatedAt = station.CreatedAt
         };
     }

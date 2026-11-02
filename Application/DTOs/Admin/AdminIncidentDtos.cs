@@ -10,11 +10,18 @@ public class CreateIncidentRequest
     public IncidentType Type { get; set; }
     public string Severity { get; set; } = "MEDIUM";
     public string Description { get; set; } = string.Empty;
+    public string? EvidenceImageUrl { get; set; }
 }
 
 public class RemoteUnlockRequest
 {
     public string Reason { get; set; } = string.Empty; // Lý do cứu hộ khách hàng (VD: Khách quên mã, kẹt cửa)
+}
+
+public class UpdateIncidentStatusRequest
+{
+    public string Status { get; set; } = "RESOLVED"; // OPEN, IN_PROGRESS, RESOLVED, CANCELLED
+    public string? ResolutionNote { get; set; }
 }
 
 public class IncidentDto
@@ -33,6 +40,7 @@ public class IncidentDto
     public string Severity { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string? ResolutionNote { get; set; }
+    public string? EvidenceImageUrl { get; set; }
     public string? ResolvedBy { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public bool RemoteUnlocked { get; set; }

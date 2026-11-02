@@ -24,6 +24,8 @@ public class Booking
     public decimal? CancelPolicyRate { get; set; }
     public string? CheckInPhotoUrl { get; set; }
     public string? ManualConfirmPhotoUrl { get; set; }
+    public string? KioskSessionHash { get; set; }
+    public DateTime? KioskSessionExpiresAt { get; set; }
     public short ExtensionCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
 /// <summary>
-/// UC-T14 ➜ A08, S-02: Emergency Center / Incident Management
-/// Tiếp nhận sự cố, xử lý mở tủ từ xa (Remote Emergency Unlock)
+/// UC-S04 & UC-S05: Emergency Center / Incident Management
+/// Tiếp nhận sự cố, cập nhật trạng thái xử lý và mở tủ khẩn cấp từ xa (Remote Emergency Unlock)
 /// </summary>
 [ApiController]
 [Route("api/admin/incidents")]
@@ -46,7 +46,7 @@ public class AdminIncidentsController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/admin/incidents — Tạo báo cáo sự cố mới
+    /// POST /api/admin/incidents — Tạo báo cáo sự cố mới (UC-S04)
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> CreateIncident([FromBody] CreateIncidentRequest request)
@@ -62,7 +62,23 @@ public class AdminIncidentsController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/admin/incidents/{incidentId}/remote-unlock — Mở tủ từ xa theo sự cố (Emergency Unlock)
+    /// PATCH /api/admin/incidents/{incidentId}/status — Cập nhật trạng thái và ghi chú xử lý sự cố (UC-S04)
+    /// </summary>
+    [HttpPatch("{incidentId:guid}/status")]
+    public async Task<IActionResult> UpdateIncidentStatus(Guid incidentId, [FromBody] UpdateIncidentStatusRequest request)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _incidentService.UpdateIncidentStatusAsync(incidentId, request, userId, GetUserEmail(), GetUserRole());
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/admin/incidents/{incidentId}/remote-unlock — Mở tủ từ xa theo sự cố (UC-S05)
     /// </summary>
     [HttpPost("{incidentId:guid}/remote-unlock")]
     public async Task<IActionResult> RemoteUnlockEmergency(Guid incidentId, [FromBody] RemoteUnlockRequest request)
@@ -78,7 +94,7 @@ public class AdminIncidentsController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/admin/incidents/lockers/{lockerId}/remote-unlock — Mở tủ từ xa trực tiếp (không cần incident trước)
+    /// POST /api/admin/incidents/lockers/{lockerId}/remote-unlock — Mở tủ từ xa trực tiếp (UC-S05)
     /// </summary>
     [HttpPost("lockers/{lockerId:guid}/remote-unlock")]
     public async Task<IActionResult> DirectRemoteUnlockLocker(Guid lockerId, [FromBody] RemoteUnlockRequest request)

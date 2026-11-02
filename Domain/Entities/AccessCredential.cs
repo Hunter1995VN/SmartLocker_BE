@@ -8,6 +8,7 @@ public class AccessCredential
     public string QrNonce { get; set; } = string.Empty;
     public DateTime QrExpiresAt { get; set; }
     public string AccessCodeHash { get; set; } = string.Empty;
+    public string? ProtectedAccessCode { get; set; }
     public string? OfflinePayload { get; set; }
     public DateTime? OfflineExpiresAt { get; set; }
     public string? OfflineNonce { get; set; }

@@ -79,6 +79,10 @@ public class StationsController : ControllerBase
             })
             .ToListAsync();
 
+        var ratings = await _db.StationReviews.GroupBy(r => r.Booking.StationId)
+            .Select(g => new { StationId = g.Key, Average = g.Average(r => r.Stars), Count = g.Count() })
+            .ToDictionaryAsync(r => r.StationId);
+
         // Loại bỏ các bản ghi trạm bị seed trùng lặp (cùng Tên và Địa chỉ), giữ nguyên toàn bộ trạm TP.HCM & Đà Nẵng
         var uniqueStations = rawStations
             .GroupBy(s => new { Name = s.Name.Trim().ToLowerInvariant(), Address = s.Address.Trim().ToLowerInvariant() })
@@ -100,6 +104,8 @@ public class StationsController : ControllerBase
             return new StationListItemDto
             {
                 Id = s.Id,
+                RatingAverage = ratings.TryGetValue(s.Id, out var rating) ? rating.Average : null,
+                RatingCount = ratings.TryGetValue(s.Id, out var ratingCount) ? ratingCount.Count : 0,
                 Name = s.Name,
                 Address = s.Address,
                 Latitude = s.Latitude,
@@ -164,7 +170,11 @@ public class StationsController : ControllerBase
             ContactPhone = station.ContactPhone
         };
 
-        // Get pricing policies from DB
+        // Get pricing and rating
+        var rating = await _db.StationReviews.Where(r => r.Booking.StationId == id).GroupBy(r => r.Booking.StationId)
+            .Select(g => new { Average = g.Average(r => r.Stars), Count = g.Count() }).FirstOrDefaultAsync();
+        dto.RatingAverage = rating?.Average;
+        dto.RatingCount = rating?.Count ?? 0;
         var policies = await _db.PricingPolicies.AsNoTracking()
             .Where(p => p.StationId == id && p.EffectiveTo == null)
             .ToListAsync();

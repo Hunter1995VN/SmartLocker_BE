@@ -16,13 +16,21 @@ public class PaymentService : IPaymentService
 {
     private readonly ISmartLockerDbContext _context;
     private readonly IPaymentGatewayService _paymentGateway;
+    private readonly IOfflineTicketService _offlineTicketService;
+    private readonly IAccessPinProtector _pinProtector;
     private readonly ILogger<PaymentService> _logger;
 
-    public PaymentService(ISmartLockerDbContext context, IPaymentGatewayService paymentGateway, ILogger<PaymentService> logger)
+    public PaymentService(
+        ISmartLockerDbContext context,
+        IPaymentGatewayService paymentGateway,
+        IOfflineTicketService offlineTicketService,
+        ILogger<PaymentService> logger, IAccessPinProtector pinProtector)
     {
         _context = context;
         _paymentGateway = paymentGateway;
+        _offlineTicketService = offlineTicketService;
         _logger = logger;
+        _pinProtector = pinProtector;
     }
 
     public async Task<ApiResponse<PaymentResultDto>> ProcessPayOSWebhookAsync(object webhookData)
@@ -182,6 +190,27 @@ public class PaymentService : IPaymentService
                 Message = "Xác nhận thanh toán thành công từ cổng PayOS!"
             });
         }
+        else if (string.Equals(payosStatus, "CANCELLED", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(payosStatus, "EXPIRED", StringComparison.OrdinalIgnoreCase) ||
+                 (payment.ExpiresAt.HasValue && payment.ExpiresAt.Value < DateTime.UtcNow) ||
+                 payment.CreatedAt < DateTime.UtcNow.AddMinutes(-30))
+        {
+            payment.Status = PaymentStatus.EXPIRED;
+            payment.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
+            {
+                PaymentId = payment.Id,
+                BookingId = payment.BookingId,
+                BookingCode = payment.Booking?.BookingCode,
+                OrderCode = payment.OrderCode,
+                Amount = payment.Amount,
+                Status = payment.Status.ToString(),
+                IsSuccess = false,
+                Message = $"Giao dịch đã hết hạn thanh toán trên cổng PayOS ({payosStatus ?? "EXPIRED"})."
+            });
+        }
 
         return ApiResponse<PaymentResultDto>.SuccessResponse(new PaymentResultDto
         {
@@ -209,37 +238,31 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.Status = BookingStatus.CONFIRMED;
 
-            // Chuẩn hóa mã PIN mở tủ thành 6 chữ số an toàn (100000 - 999999)
-            var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-            using var sha256 = SHA256.Create();
-            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
-            var hashString = Convert.ToBase64String(hashBytes);
+            var randomCode = RandomNumberGenerator.GetInt32(0, 100000000).ToString("D8");
+            var hashString = OnlineTicket.HashPin(randomCode);
 
-            var qrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                JsonSerializer.Serialize(new
-                {
-                    bookingId = payment.BookingId,
-                    bookingCode = payment.Booking.BookingCode,
-                    stationId = payment.Booking.StationId,
-                    accessCode = randomCode,
-                    nonce = Guid.NewGuid().ToString("N"),
-                    expiresAt = payment.Booking.EndAt
-                })));
+            var offlineNonce = Guid.NewGuid().ToString("N");
+            var offlineExpiresAt = payment.Booking.EndAt > DateTime.UtcNow
+                ? payment.Booking.EndAt.AddHours(24)
+                : DateTime.UtcNow.AddHours(24);
 
-            _context.AccessCredentials.Add(new AccessCredential
+            var hmacToken = _offlineTicketService.GenerateHmacToken(payment.Booking, randomCode, offlineExpiresAt, offlineNonce);
+
+            var credential = new AccessCredential
             {
                 BookingId = payment.BookingId,
-                QrPayload = qrPayload,
-                QrNonce = Guid.NewGuid().ToString("N"),
-                QrExpiresAt = payment.Booking.EndAt,
                 AccessCodeHash = hashString,
-                OfflinePayload = randomCode,
+                ProtectedAccessCode = _pinProtector.Protect(payment.BookingId, randomCode),
+                OfflinePayload = hmacToken,
+                OfflineNonce = offlineNonce,
+                OfflineExpiresAt = offlineExpiresAt,
                 IsActive = true,
                 IssuedAt = DateTime.UtcNow
-            });
+            };
+            OnlineTicket.Rotate(credential, payment.Booking.StationId, DateTime.UtcNow);
+            _context.AccessCredentials.Add(credential);
 
-            _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}",
-                payment.Booking.BookingCode, randomCode);
+            _logger.LogInformation("Booking {Code} confirmed and access tickets issued", payment.Booking.BookingCode);
         }
         else if (payment.Kind == PaymentKind.EXTENSION)
         {
@@ -255,6 +278,12 @@ public class PaymentService : IPaymentService
                         payment.Booking.EndAt = newEndAt;
                         payment.Booking.IsOverdue = false;
                         payment.Booking.OverdueSince = null;
+                        var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
+                        if (bookingUser != null && bookingUser.OverdueDebt > 0)
+                        {
+                            bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
+                            bookingUser.UpdatedAt = DateTime.UtcNow;
+                        }
                         payment.Booking.ExtensionCount++;
 
                         _context.BookingExtensions.Add(new BookingExtension
@@ -270,17 +299,18 @@ public class PaymentService : IPaymentService
                             .FirstOrDefaultAsync(ac => ac.BookingId == payment.BookingId && ac.IsActive);
                         if (cred != null)
                         {
+                            var newExpires = newEndAt.AddHours(24);
+                            cred.OfflineExpiresAt = newExpires;
                             cred.QrExpiresAt = newEndAt;
-                            cred.QrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                                JsonSerializer.Serialize(new
-                                {
-                                    bookingId = payment.BookingId,
-                                    bookingCode = payment.Booking.BookingCode,
-                                    stationId = payment.Booking.StationId,
-                                    accessCode = cred.OfflinePayload,
-                                    nonce = cred.QrNonce,
-                                    expiresAt = newEndAt
-                                })));
+
+                            var pin = _offlineTicketService.ExtractPinFromCredential(cred);
+                            var nonce = Guid.NewGuid().ToString("N");
+                            if (!string.IsNullOrEmpty(pin))
+                            {
+                                cred.OfflinePayload = _offlineTicketService.GenerateHmacToken(payment.Booking, pin, newExpires, nonce);
+                                cred.OfflineNonce = nonce;
+                            }
+                            OnlineTicket.Rotate(cred, payment.Booking.StationId, DateTime.UtcNow);
                         }
                     }
                 }
@@ -298,11 +328,12 @@ public class PaymentService : IPaymentService
             }
             payment.Booking.UpdatedAt = DateTime.UtcNow;
 
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
-            if (user != null && user.OverdueDebt > 0)
+            var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
+            if (bookingUser != null && bookingUser.OverdueDebt > 0)
             {
-                user.OverdueDebt = Math.Max(0, user.OverdueDebt - payment.Amount);
-                user.UpdatedAt = DateTime.UtcNow;
+                bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
+                bookingUser.UpdatedAt = DateTime.UtcNow;
+            }
             }
         }
 

@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-10-29T15:02:00.0954434Z",
+  "mode": "Read-only SQL verification after actual TEST forms; no state changes",
+  "lostReport": {
+    "originalBookingStatus": "COMPLETED_MANUAL",
+    "status": "RETURNED",
+    "storedPhotoCharacters": 56419,
+    "resolvedIncidents": 1,
+    "hasCheckoutTimestamp": true
+  },
+  "ownerTestNotificationsRead": 3
+}

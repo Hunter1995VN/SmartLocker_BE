@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 public interface ISmartLockerDbContext
 {
+    DbSet<LostItemReport> LostItemReports { get; }
+    DbSet<Notification> Notifications { get; }
+    DbSet<StationReview> StationReviews { get; }
     DbSet<User> Users { get; }
     DbSet<Station> Stations { get; }
     DbSet<Locker> Lockers { get; }
