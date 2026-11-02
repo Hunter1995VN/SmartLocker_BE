@@ -6,4 +6,5 @@ public class CreateBookingRequest
     public string Size { get; set; } = string.Empty;  // "S", "M", "L"
     public DateTime StartAt { get; set; }
     public DateTime EndAt { get; set; }
+    public string? VoucherCode { get; set; }
 }

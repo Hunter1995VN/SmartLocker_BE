@@ -114,6 +114,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddScoped<IPricingService, PricingService>();
 builder.Services.AddScoped<IPaymentGatewayService, PayOSService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
+builder.Services.AddScoped<IAdminRefundService, AdminRefundService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 
 // === Background Jobs (Nhiệm) ===

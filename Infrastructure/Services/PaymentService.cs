@@ -268,7 +268,20 @@ public class PaymentService : IPaymentService
 
                         var cred = await _context.AccessCredentials
                             .FirstOrDefaultAsync(ac => ac.BookingId == payment.BookingId && ac.IsActive);
-                        if (cred != null) cred.QrExpiresAt = newEndAt;
+                        if (cred != null)
+                        {
+                            cred.QrExpiresAt = newEndAt;
+                            cred.QrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
+                                JsonSerializer.Serialize(new
+                                {
+                                    bookingId = payment.BookingId,
+                                    bookingCode = payment.Booking.BookingCode,
+                                    stationId = payment.Booking.StationId,
+                                    accessCode = cred.OfflinePayload,
+                                    nonce = cred.QrNonce,
+                                    expiresAt = newEndAt
+                                })));
+                        }
                     }
                 }
                 catch (Exception ex) { _logger.LogError(ex, "Error parsing extension payload"); }
@@ -278,6 +291,19 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.IsOverdue = false;
             payment.Booking.OverdueSince = null;
+            // Cấp cửa sổ ân hạn 15 phút kể từ thời điểm thanh toán phụ phí để khách lấy đồ mà không bị đánh dấu quá hạn lại
+            if (payment.Booking.EndAt < DateTime.UtcNow.AddMinutes(15))
+            {
+                payment.Booking.EndAt = DateTime.UtcNow.AddMinutes(15);
+            }
+            payment.Booking.UpdatedAt = DateTime.UtcNow;
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
+            if (user != null && user.OverdueDebt > 0)
+            {
+                user.OverdueDebt = Math.Max(0, user.OverdueDebt - payment.Amount);
+                user.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
         await _context.SaveChangesAsync();
