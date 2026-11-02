@@ -497,6 +497,18 @@ public class AdminUserService : IAdminUserService
         },
         new()
         {
+            Code = "FINANCIAL_REPORT_EXPORT",
+            Module = "Báo cáo Tài chính & Lưu lượng (UC-A10)",
+            Name = "Phân tích & Xuất báo cáo doanh thu tài chính, lưu lượng giao dịch thanh toán",
+            Description = "Tổng hợp doanh thu gộp/thuần, trợ giá khuyến mại, tỷ lệ chuyển đổi cổng thanh toán, lưu lượng 24h và kết xuất chứng từ Excel đa Sheet / CSV / PDF.",
+            AdminAllowed = true,
+            StaffAllowed = true,
+            TravelerAllowed = false,
+            StaffScopeNote = "Tra cứu báo cáo & xuất sổ đối soát (tự động ghi vết Audit Log)",
+            RiskLevel = "HIGH"
+        },
+        new()
+        {
             Code = "SECURITY_AUDIT_LOGS",
             Module = "An ninh & Truy vết (UC-A08)",
             Name = "Tra cứu nhật ký truy vết an ninh toàn hệ thống (Audit Logs)",
