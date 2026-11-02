@@ -447,7 +447,7 @@ public class BookingService : IBookingService
         var wasPendingPayment = booking.Status == BookingStatus.PENDING_PAYMENT;
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var paidAmount = basePayment?.Amount ?? booking.TotalAmount;
+        var paidAmount = basePayment?.Amount ?? booking.BaseAmount;
 
         var now = DateTime.UtcNow;
         var todayStart = now.Date;
@@ -529,7 +529,7 @@ public class BookingService : IBookingService
 
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var paidAmount = basePayment?.Amount ?? booking.TotalAmount;
+        var paidAmount = basePayment?.Amount ?? booking.BaseAmount;
 
         var now = DateTime.UtcNow;
         var todayStart = now.Date;

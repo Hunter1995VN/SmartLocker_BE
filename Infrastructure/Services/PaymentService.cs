@@ -334,7 +334,6 @@ public class PaymentService : IPaymentService
                 bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
                 bookingUser.UpdatedAt = DateTime.UtcNow;
             }
-            }
         }
 
         await _context.SaveChangesAsync();

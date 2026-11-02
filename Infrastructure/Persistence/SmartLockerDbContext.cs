@@ -248,6 +248,5 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(v => v.MaxDiscountAmount).HasColumnType("decimal(12,2)");
             entity.Property(v => v.MinOrderAmount).HasColumnType("decimal(12,2)").HasDefaultValue(0m);
         });
-        });
     }
 }

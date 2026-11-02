@@ -18,6 +18,8 @@ public class Voucher
     public decimal MinOrderAmount { get; set; }
     public DateTime ValidFrom { get; set; }
     public DateTime ValidTo { get; set; }
+    public DateTime StartDate { get => ValidFrom; set => ValidFrom = value; }
+    public DateTime EndDate { get => ValidTo; set => ValidTo = value; }
     public int UsageLimit { get; set; }
     public int UsedCount { get; set; }
     public bool IsActive { get; set; }

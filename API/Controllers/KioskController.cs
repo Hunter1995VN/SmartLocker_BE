@@ -10,7 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 [Route("api/kiosk")]
 public class KioskController : ControllerBase
 {
-    [HttpPost("pay-overdue")]
+    [HttpPost("pay-fee")]
+    [HttpPost("pay-overdue-fee")]
     public async Task<IActionResult> PayOverdue(KioskFeePaymentRequest request)
     {
         var result = await _kioskService.PayOverdueAsync(request);
