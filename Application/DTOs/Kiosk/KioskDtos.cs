@@ -51,10 +51,41 @@ public class KioskCheckOutResponse
     public string? LockerCode { get; set; }
     public string? LockerSize { get; set; }
     public bool IsOverdue { get; set; }
+    public int OverdueHours { get; set; }
+    public decimal OverdueFeePerHour { get; set; }
     public decimal OverdueFee { get; set; }
     public string? CheckoutUrl { get; set; }
+    public string? QrCode { get; set; }
+    public string? AccountNumber { get; set; }
+    public string? AccountName { get; set; }
+    public string? Bin { get; set; }
+    public long? OrderCode { get; set; }
+    public DateTime? PaymentExpiresAt { get; set; }
     public string? DoorState { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+public class KioskOverduePaymentRequest
+{
+    public Guid? BookingId { get; set; }
+    public string? BookingCode { get; set; }
+    public Guid? StationId { get; set; }
+}
+
+public class KioskOverduePaymentResponse
+{
+    public Guid BookingId { get; set; }
+    public string BookingCode { get; set; } = string.Empty;
+    public int OverdueHours { get; set; }
+    public decimal OverdueFeePerHour { get; set; }
+    public decimal Amount { get; set; }
+    public string PaymentUrl { get; set; } = string.Empty;
+    public DateTime PaymentExpiresAt { get; set; }
+    public string? QrCode { get; set; }
+    public string? AccountNumber { get; set; }
+    public string? AccountName { get; set; }
+    public string? Bin { get; set; }
+    public long OrderCode { get; set; }
 }
 
 public class KioskFeePaymentRequest : KioskCheckOutRequest
@@ -96,6 +127,7 @@ public class KioskOperationStatusRequest
     public Guid BookingId { get; set; }
     public string SessionToken { get; set; } = string.Empty;
 }
+
 public class KioskOperationStatusResponse
 {
     public string BookingStatus { get; set; } = string.Empty;

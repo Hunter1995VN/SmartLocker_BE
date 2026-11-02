@@ -233,20 +233,21 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
             entity.Property(l => l.TargetEntity).IsRequired().HasMaxLength(100);
         });
 
-        // === Ánh xạ bảng Vouchers ===
+        // === Ánh xạ bảng Vouchers (UC-T18) ===
         modelBuilder.Entity<Voucher>(entity =>
         {
-            entity.ToTable("Vouchers");
+            entity.ToTable("Vouchers", tb => tb.UseSqlOutputClause(false));
             entity.HasKey(v => v.Id);
             entity.Property(v => v.Id).ValueGeneratedNever();
             entity.Property(v => v.Code).IsRequired().HasMaxLength(40);
+            entity.HasIndex(v => v.Code).IsUnique();
             entity.Property(v => v.Title).IsRequired().HasMaxLength(150);
             entity.Property(v => v.Description).HasMaxLength(350);
-            entity.Property(v => v.DiscountType).IsRequired().HasMaxLength(20);
+            entity.Property(v => v.DiscountType).IsRequired().HasMaxLength(20).HasDefaultValue("PERCENTAGE");
             entity.Property(v => v.DiscountValue).HasColumnType("decimal(12,2)");
             entity.Property(v => v.MaxDiscountAmount).HasColumnType("decimal(12,2)");
-            entity.Property(v => v.MinOrderAmount).HasColumnType("decimal(12,2)");
-            entity.HasIndex(v => v.Code).IsUnique();
+            entity.Property(v => v.MinOrderAmount).HasColumnType("decimal(12,2)").HasDefaultValue(0m);
+        });
         });
     }
 }

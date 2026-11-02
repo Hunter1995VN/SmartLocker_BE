@@ -58,6 +58,32 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/kiosk/pay-overdue: Tạo mã VietQR PayOS thanh toán phụ phí quá hạn trực tiếp trên Kiosk (UC-T19)
+    /// </summary>
+    [HttpPost("pay-overdue")]
+    public async Task<IActionResult> CreateOverduePayment([FromBody] KioskOverduePaymentRequest request)
+    {
+        var result = await _kioskService.CreateOverduePaymentAsync(request);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/kiosk/confirm-overdue-payment: Xác nhận thanh toán phụ phí quá hạn tại Kiosk (hỗ trợ demo/test nhanh UC-T19)
+    /// </summary>
+    [HttpPost("confirm-overdue-payment")]
+    public async Task<IActionResult> ConfirmOverduePayment([FromBody] KioskOverduePaymentRequest request)
+    {
+        var result = await _kioskService.ConfirmOverduePaymentDemoAsync(request);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// POST /api/kiosk/manual-confirm: Khách xác nhận thủ công kèm ảnh chụp khi cảm biến cửa bị lỗi (UC-C27)
     /// </summary>
     [HttpPost("manual-confirm")]
@@ -71,7 +97,7 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/kiosk/station/{stationId}/status: Lấy danh sách ô tủ & trạng thái của trạm phục vụ màn hình Kiosk
+    /// GET /api/kiosk/station/{stationId:guid}/status: Lấy danh sách ô tủ & trạng thái của trạm phục vụ màn hình Kiosk
     /// </summary>
     [HttpGet("station/{stationId:guid}/status")]
     public async Task<IActionResult> GetStationStatus(Guid stationId)
