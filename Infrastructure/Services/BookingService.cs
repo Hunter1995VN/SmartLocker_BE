@@ -432,42 +432,68 @@ public class BookingService : IBookingService
     /// </summary>
     public async Task<ApiResponse<BookingDto>> CancelBookingAsync(Guid userId, Guid bookingId, CancelBookingRequest request)
     {
-        var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == bookingId);
+        var booking = await _context.Bookings
+            .Include(b => b.Station)
+            .Include(b => b.Locker)
+            .Include(b => b.PricingPolicy)
+            .Include(b => b.Payments)
+            .FirstOrDefaultAsync(b => b.Id == bookingId);
+
         if (booking == null) return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy đặt tủ.");
-        if (booking.UserId != userId) return ApiResponse<BookingDto>.ErrorResponse("Không có quyền.");
+        if (booking.UserId != userId) return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền thực hiện thao tác trên đơn này.");
         if (booking.Status != BookingStatus.PENDING_PAYMENT && booking.Status != BookingStatus.CONFIRMED)
             return ApiResponse<BookingDto>.ErrorResponse("Không thể hủy đặt tủ ở trạng thái hiện tại. Chỉ hủy được khi PENDING_PAYMENT hoặc CONFIRMED.");
 
         var wasPendingPayment = booking.Status == BookingStatus.PENDING_PAYMENT;
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
+        var paidAmount = basePayment?.Amount ?? booking.TotalAmount;
 
-        if (booking.PricingPolicy == null && booking.PricingPolicyId != null)
-            booking.PricingPolicy = await _context.PricingPolicies.FindAsync(booking.PricingPolicyId);
+        var now = DateTime.UtcNow;
+        var todayStart = now.Date;
+        var dailyCancelledCount = await _context.Bookings
+            .CountAsync(b => b.UserId == userId && b.Status == BookingStatus.CANCELLED && b.UpdatedAt >= todayStart);
 
-        var refundAmount = _pricingService.CalculateRefundAmount(booking);
+        decimal refundRate;
+        decimal refundAmount;
+        if (dailyCancelledCount >= 2)
+        {
+            refundRate = 0m;
+            refundAmount = 0m;
+        }
+        else
+        {
+            var cutoffHours = policy?.RefundCutoffHours ?? 2;
+            var hoursUntilStart = (booking.StartAt - now).TotalHours;
+            if (hoursUntilStart >= cutoffHours)
+                refundRate = policy?.RefundRateEarly ?? 1.00m;
+            else if (hoursUntilStart > 0)
+                refundRate = policy?.RefundRateLate ?? 0.50m;
+            else
+                refundRate = 0m;
+
+            refundAmount = Math.Round(paidAmount * refundRate, 0);
+        }
+
         booking.Status = BookingStatus.CANCELLED;
         booking.CancellationReason = request.Reason;
+        booking.CancelPolicyRate = refundRate;
+        booking.UpdatedAt = now;
 
-        var timeUntilStart = (booking.StartAt - DateTime.UtcNow).TotalHours;
-        booking.CancelPolicyRate = timeUntilStart > (booking.PricingPolicy?.RefundCutoffHours ?? 2)
-            ? (booking.PricingPolicy?.RefundRateEarly ?? 1.00m)
-            : (timeUntilStart > 0 ? (booking.PricingPolicy?.RefundRateLate ?? 0.50m) : 0);
-
-        // Create refund record if applicable
         if (refundAmount > 0)
         {
             _context.Payments.Add(new Payment
             {
                 BookingId = booking.Id,
                 Kind = PaymentKind.REFUND,
-                Status = PaymentStatus.PAID,
+                Status = PaymentStatus.PENDING,
                 Amount = refundAmount,
                 OrderCode = "REF-" + Guid.NewGuid().ToString("N")[..12].ToUpper(),
-                PaidAt = DateTime.UtcNow,
+                CreatedAt = now,
                 Gateway = "PAYOS"
             });
         }
 
-        // Cancel pending payments
         var pendingPayments = await _context.Payments
             .Where(p => p.BookingId == booking.Id && p.Status == PaymentStatus.PENDING)
             .ToListAsync();
@@ -480,7 +506,6 @@ public class BookingService : IBookingService
 
         await _context.SaveChangesAsync();
 
-        // Hoàn trả lượt dùng & ngân sách Voucher nếu đơn chưa thanh toán hoặc hủy hoàn tiền 100%
         if (_promotionService != null && (wasPendingPayment || booking.CancelPolicyRate == 1.00m))
         {
             await _promotionService.ReleaseVoucherForBookingAsync(booking.Id, "Khách hàng hủy đơn đặt tủ");
@@ -488,6 +513,118 @@ public class BookingService : IBookingService
 
         return await GetBookingByIdAsync(userId, bookingId);
     }
+
+
+    public async Task<ApiResponse<CancelPreviewDto>> GetCancelPreviewAsync(Guid userId, Guid bookingId)
+    {
+        var booking = await _context.Bookings
+            .Include(b => b.Station)
+            .Include(b => b.Locker)
+            .Include(b => b.PricingPolicy)
+            .Include(b => b.Payments)
+            .FirstOrDefaultAsync(b => b.Id == bookingId);
+
+        if (booking == null) return ApiResponse<CancelPreviewDto>.ErrorResponse("Không tìm thấy đơn đặt tủ.");
+        if (booking.UserId != userId) return ApiResponse<CancelPreviewDto>.ErrorResponse("Bạn không có quyền thực hiện trên đơn này.");
+
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
+        var paidAmount = basePayment?.Amount ?? booking.TotalAmount;
+
+        var now = DateTime.UtcNow;
+        var todayStart = now.Date;
+        var dailyCancelledCount = await _context.Bookings
+            .CountAsync(b => b.UserId == userId && b.Status == BookingStatus.CANCELLED && b.UpdatedAt >= todayStart);
+
+        decimal refundRate;
+        decimal refundAmount;
+        string policyTier;
+        string policyDesc;
+
+        if (dailyCancelledCount >= 2)
+        {
+            refundRate = 0m;
+            refundAmount = 0m;
+            policyTier = "DAILY_LIMIT_EXCEEDED";
+            policyDesc = $"Bạn đã thực hiện {dailyCancelledCount} lần hủy trong ngày hôm nay. Theo quy định chống lạm dụng vị trí tủ, từ lần hủy thứ 3 trong ngày mức hoàn tiền là 0%.";
+        }
+        else
+        {
+            var cutoffHours = policy?.RefundCutoffHours ?? 2;
+            var hoursUntilStart = (booking.StartAt - now).TotalHours;
+
+            if (hoursUntilStart >= cutoffHours)
+            {
+                refundRate = policy?.RefundRateEarly ?? 1.00m;
+                policyTier = "EARLY";
+                policyDesc = $"Hủy trước giờ nhận tủ trên {cutoffHours} tiếng: Hoàn lại {(refundRate * 100):0.#}% số tiền đã thanh toán.";
+            }
+            else if (hoursUntilStart > 0)
+            {
+                refundRate = policy?.RefundRateLate ?? 0.50m;
+                policyTier = "LATE";
+                policyDesc = $"Hủy sát giờ nhận tủ (dưới {cutoffHours} tiếng): Hoàn lại {(refundRate * 100):0.#}% số tiền đã thanh toán.";
+            }
+            else
+            {
+                refundRate = 0m;
+                policyTier = "AFTER_START";
+                policyDesc = "Đã quá thời gian bắt đầu sử dụng tủ: Không hỗ trợ hoàn tiền.";
+            }
+
+            refundAmount = Math.Round(paidAmount * refundRate, 0);
+        }
+
+        var preview = new CancelPreviewDto
+        {
+            BookingId = booking.Id,
+            BookingCode = booking.BookingCode,
+            StationName = booking.Station?.Name ?? "Trạm tủ",
+            StartAt = booking.StartAt,
+            PaidAmount = paidAmount,
+            RefundRate = refundRate,
+            RefundAmount = refundAmount,
+            PolicyTier = policyTier,
+            PolicyDescription = policyDesc,
+            DailyCancelledCountToday = dailyCancelledCount,
+            IsDailyLimitExceeded = dailyCancelledCount >= 2
+        };
+
+        return ApiResponse<CancelPreviewDto>.SuccessResponse(preview);
+    }
+
+    public async Task<ApiResponse<BookingDto>> SimulateOverdueAsync(Guid userId, Guid bookingId, int hoursOverdue = 2)
+    {
+        var booking = await _context.Bookings
+            .Include(b => b.Station)
+            .Include(b => b.Locker)
+            .Include(b => b.PricingPolicy)
+            .Include(b => b.Payments)
+            .Include(b => b.AccessCredential)
+            .FirstOrDefaultAsync(b => b.Id == bookingId);
+
+        if (booking == null)
+            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy thông tin đặt tủ.");
+
+        if (booking.UserId != userId)
+            return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền can thiệp đơn này.");
+
+        var now = DateTime.UtcNow;
+        if (booking.Status != BookingStatus.STORED && booking.Status != BookingStatus.CONFIRMED)
+            return ApiResponse<BookingDto>.ErrorResponse("Chỉ có thể mô phỏng quá hạn cho đơn đang lưu trữ (STORED) hoặc đã xác nhận (CONFIRMED).");
+
+        var graceMinutes = booking.PricingPolicy?.GracePeriodMinutes ?? 15;
+        booking.CheckedInAt = now.AddHours(-(hoursOverdue + 2));
+        booking.StartAt = booking.CheckedInAt.Value;
+        booking.EndAt = now.AddHours(-hoursOverdue).AddMinutes(-(graceMinutes + 5));
+        booking.IsOverdue = true;
+        booking.OverdueSince = booking.EndAt.AddMinutes(graceMinutes);
+        booking.UpdatedAt = now;
+
+        await _context.SaveChangesAsync();
+        return await GetBookingByIdAsync(userId, bookingId);
+    }
+
 
     /// <summary>
     /// UC-T09: Thanh toán phụ phí quá hạn

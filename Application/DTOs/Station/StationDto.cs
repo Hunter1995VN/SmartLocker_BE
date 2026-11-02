@@ -22,8 +22,17 @@ public class StationDto
     public int AvailableM { get; set; }
     public int AvailableL { get; set; }
 
-    // Pricing
+    // Pricing & Policies from Database
     public decimal? PriceS { get; set; }
     public decimal? PriceM { get; set; }
     public decimal? PriceL { get; set; }
+    public decimal? OverdueFeeS { get; set; }
+    public decimal? OverdueFeeM { get; set; }
+    public decimal? OverdueFeeL { get; set; }
+    public short MinHours { get; set; } = 1;
+    public short MaxHours { get; set; } = 72;
+    public short GracePeriodMinutes { get; set; } = 15;
+    public short RefundCutoffHours { get; set; } = 2;
+    public decimal RefundRateEarly { get; set; } = 1.00m;
+    public decimal RefundRateLate { get; set; } = 0.50m;
 }

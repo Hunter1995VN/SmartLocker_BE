@@ -301,6 +301,7 @@ public class PaymentService : IPaymentService
                         {
                             var newExpires = newEndAt.AddHours(24);
                             cred.OfflineExpiresAt = newExpires;
+                            cred.QrExpiresAt = newEndAt;
 
                             var pin = _offlineTicketService.ExtractPinFromCredential(cred);
                             var nonce = Guid.NewGuid().ToString("N");
@@ -320,11 +321,19 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.IsOverdue = false;
             payment.Booking.OverdueSince = null;
+            // Cấp cửa sổ ân hạn 15 phút kể từ thời điểm thanh toán phụ phí để khách lấy đồ mà không bị đánh dấu quá hạn lại
+            if (payment.Booking.EndAt < DateTime.UtcNow.AddMinutes(15))
+            {
+                payment.Booking.EndAt = DateTime.UtcNow.AddMinutes(15);
+            }
+            payment.Booking.UpdatedAt = DateTime.UtcNow;
+
             var bookingUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == payment.Booking.UserId);
             if (bookingUser != null && bookingUser.OverdueDebt > 0)
             {
                 bookingUser.OverdueDebt = Math.Max(0, bookingUser.OverdueDebt - payment.Amount);
                 bookingUser.UpdatedAt = DateTime.UtcNow;
+            }
             }
         }
 

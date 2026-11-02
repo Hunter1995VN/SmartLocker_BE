@@ -18,6 +18,7 @@ public class KioskService : IKioskService
     private readonly IMqttPublishService _mqttPublishService;
     private readonly ILockerNotificationService _notificationService;
     private readonly IPricingService _pricingService;
+    private readonly IPaymentGatewayService? _paymentGateway;
     private readonly IBookingService? _bookingService;
     private readonly ILogger<KioskService> _logger;
 
@@ -26,7 +27,7 @@ public class KioskService : IKioskService
         IMqttPublishService mqttPublishService,
         ILockerNotificationService notificationService,
         IPricingService pricingService,
-        ILogger<KioskService> logger, IBookingService? bookingService = null)
+        ILogger<KioskService> logger, IBookingService? bookingService = null, IPaymentGatewayService? paymentGateway = null)
     {
         _context = context;
         _mqttPublishService = mqttPublishService;
@@ -34,6 +35,7 @@ public class KioskService : IKioskService
         _pricingService = pricingService;
         _logger = logger;
         _bookingService = bookingService;
+        _paymentGateway = paymentGateway;
     }
 
     private static string FeeSessionHash(string? type, string payload, string token) =>
@@ -351,4 +353,128 @@ public class KioskService : IKioskService
 
         return ApiResponse<KioskStationStatusResponse>.SuccessResponse(response);
     }
+
+    private class ParsedQr
+    {
+        public Guid? BookingId { get; set; }
+        public string? BookingCode { get; set; }
+        public Guid? StationId { get; set; }
+        public string? AccessCode { get; set; }
+        public string? Nonce { get; set; }
+    }
+
+    private ParsedQr? ParseQrPayload(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var trimmed = raw.Trim();
+        try
+        {
+            if (trimmed.StartsWith("{") && trimmed.EndsWith("}"))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
+                var root = doc.RootElement;
+                return new ParsedQr
+                {
+                    BookingId = root.TryGetProperty("bookingId", out var bId) && bId.TryGetGuid(out var gid) ? gid : null,
+                    BookingCode = root.TryGetProperty("bookingCode", out var bCode) ? bCode.GetString() : null,
+                    StationId = root.TryGetProperty("stationId", out var sId) && sId.TryGetGuid(out var sid) ? sid : null,
+                    AccessCode = root.TryGetProperty("accessCode", out var ac) ? ac.GetString() : null,
+                    Nonce = root.TryGetProperty("nonce", out var n) ? n.GetString() : null
+                };
+            }
+            var bytes = Convert.FromBase64String(trimmed);
+            var json = System.Text.Encoding.UTF8.GetString(bytes);
+            return ParseQrPayload(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<ApiResponse<KioskOverduePaymentResponse>> CreateOverduePaymentAsync(KioskOverduePaymentRequest request)
+    {
+        Booking? booking = null;
+        if (request.BookingId.HasValue)
+        {
+            booking = await _context.Bookings.Include(b => b.Station).Include(b => b.Locker).Include(b => b.PricingPolicy).Include(b => b.Payments)
+                .FirstOrDefaultAsync(b => b.Id == request.BookingId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.BookingCode))
+        {
+            var code = request.BookingCode.Trim().ToUpper();
+            booking = await _context.Bookings.Include(b => b.Station).Include(b => b.Locker).Include(b => b.PricingPolicy).Include(b => b.Payments)
+                .FirstOrDefaultAsync(b => b.BookingCode == code);
+        }
+        if (booking == null) return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Không tìm thấy đơn đặt tủ.");
+
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        var grace = policy?.GracePeriodMinutes ?? 15;
+        var overdueHours = (int)Math.Max(1, Math.Ceiling((DateTime.UtcNow - booking.EndAt.AddMinutes(grace)).TotalHours));
+        var feePerHour = policy?.OverdueFeePerHour ?? 10000m;
+        var overdueFee = overdueHours * feePerHour;
+
+        if (_paymentGateway == null)
+            return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Cổng thanh toán chưa được cấu hình.");
+
+        var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + System.Security.Cryptography.RandomNumberGenerator.GetInt32(1000, 10000));
+        var expiresAt = DateTime.UtcNow.AddMinutes(15);
+        var payment = new Payment
+        {
+            BookingId = booking.Id,
+            Kind = PaymentKind.OVERDUE,
+            Status = PaymentStatus.PENDING,
+            Amount = overdueFee,
+            OrderCode = orderCode.ToString(),
+            ExpiresAt = expiresAt,
+            Gateway = "PAYOS"
+        };
+        _context.Payments.Add(payment);
+        await _context.SaveChangesAsync();
+
+        var link = await _paymentGateway.CreatePaymentLinkAsync(orderCode, (int)overdueFee, $"Qua han {booking.BookingCode}", "", "");
+        payment.PaymentLink = link.CheckoutUrl;
+        payment.GatewayTxnId = link.PaymentLinkId;
+        await _context.SaveChangesAsync();
+
+        return ApiResponse<KioskOverduePaymentResponse>.SuccessResponse(new KioskOverduePaymentResponse
+        {
+            BookingId = booking.Id,
+            BookingCode = booking.BookingCode,
+            OverdueHours = overdueHours,
+            OverdueFeePerHour = feePerHour,
+            Amount = overdueFee,
+            PaymentUrl = link.CheckoutUrl,
+            PaymentExpiresAt = expiresAt,
+            QrCode = link.QrCode,
+            AccountNumber = link.AccountNumber,
+            AccountName = link.AccountName,
+            Bin = link.Bin,
+            OrderCode = orderCode
+        }, "Tạo yêu cầu thanh toán phụ phí quá hạn thành công.");
+    }
+
+    public async Task<ApiResponse<bool>> ConfirmOverduePaymentDemoAsync(KioskOverduePaymentRequest request)
+    {
+        Booking? booking = null;
+        if (request.BookingId.HasValue)
+            booking = await _context.Bookings.Include(b => b.Payments).FirstOrDefaultAsync(b => b.Id == request.BookingId.Value);
+        else if (!string.IsNullOrWhiteSpace(request.BookingCode))
+            booking = await _context.Bookings.Include(b => b.Payments).FirstOrDefaultAsync(b => b.BookingCode == request.BookingCode.Trim().ToUpper());
+        if (booking == null) return ApiResponse<bool>.ErrorResponse("Không tìm thấy đơn.");
+
+        var payment = booking.Payments.OrderByDescending(p => p.CreatedAt).FirstOrDefault(p => p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PENDING);
+        if (payment != null)
+        {
+            payment.Status = PaymentStatus.PAID;
+            payment.PaidAt = DateTime.UtcNow;
+        }
+        booking.IsOverdue = false;
+        booking.OverdueSince = null;
+        booking.EndAt = DateTime.UtcNow.AddMinutes(15);
+        booking.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return ApiResponse<bool>.SuccessResponse(true, "Xác nhận thanh toán quá hạn thành công.");
+    }
+
 }

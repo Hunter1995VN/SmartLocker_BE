@@ -38,6 +38,11 @@ public class BookingDto
     public bool IsOfflineReady { get; set; }
 
     // Derived fields (calculated at response time)
+    public decimal? HourlyRate { get; set; }
+    public short? MaxHours { get; set; }
+    public decimal? OverdueFeePerHour { get; set; }
+    public int? OverdueHours { get; set; }
+    public int? GracePeriodMinutes { get; set; }
     public decimal? CurrentOverdueFee { get; set; }
     public decimal? EstimatedRefundAmount { get; set; }
     public bool CanExtend { get; set; }

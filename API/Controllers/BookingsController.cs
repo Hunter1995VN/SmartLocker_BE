@@ -103,7 +103,7 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T07: Gia hạn booking
+    /// UC-T14: Gia hạn booking
     /// </summary>
     [HttpPost("{id:guid}/extend")]
     public async Task<IActionResult> ExtendBooking(Guid id, [FromBody] ExtendBookingRequest request)
@@ -120,7 +120,24 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T08: Hủy booking
+    /// UC-T20: Xem trước thông tin hủy đơn & chính sách hoàn tiền
+    /// </summary>
+    [HttpGet("{id:guid}/cancel-preview")]
+    public async Task<IActionResult> GetCancelPreview(Guid id)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
+
+        var result = await _bookingService.GetCancelPreviewAsync(userId, id);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// UC-T20: Hủy booking
     /// </summary>
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> CancelBooking(Guid id, [FromBody] CancelBookingRequest request)
@@ -137,7 +154,7 @@ public class BookingsController : ControllerBase
     }
 
     /// <summary>
-    /// UC-T09: Thanh toán phụ phí quá hạn
+    /// UC-T19: Thanh toán phụ phí quá hạn (tạo mã VietQR PayOS)
     /// </summary>
     [HttpPost("{id:guid}/pay-overdue")]
     public async Task<IActionResult> PayOverdueFee(Guid id)
@@ -147,6 +164,23 @@ public class BookingsController : ControllerBase
             return Unauthorized(new { message = "Không xác định được người dùng từ token" });
 
         var result = await _bookingService.PayOverdueFeeAsync(userId, id);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// UC-T19 Helper: Giả lập trạng thái quá hạn cho đơn đang STORED để kiểm thử nhanh
+    /// </summary>
+    [HttpPost("{id:guid}/simulate-overdue")]
+    public async Task<IActionResult> SimulateOverdue(Guid id, [FromQuery] int overdueHours = 2)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng từ token" });
+
+        var result = await _bookingService.SimulateOverdueAsync(userId, id, overdueHours);
         if (!result.Success)
             return BadRequest(result);
 
