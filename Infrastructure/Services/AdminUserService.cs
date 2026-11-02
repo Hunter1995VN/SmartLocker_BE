@@ -509,6 +509,18 @@ public class AdminUserService : IAdminUserService
         },
         new()
         {
+            Code = "OCCUPANCY_TURNOVER_ANALYTICS",
+            Module = "Hiệu suất & Vòng quay Tủ (UC-A13)",
+            Name = "Phân tích tỷ lệ lấp đầy (Occupancy Rate) & tần suất xoay vòng ngăn tủ",
+            Description = "Đo lường công suất lấp đầy theo giờ thực tế (Locker-Hours), hệ số xoay vòng từng ngăn tủ, chỉ số RevPAL, chẩn đoán quá tải trạm và xuất báo cáo hiệu suất.",
+            AdminAllowed = true,
+            StaffAllowed = true,
+            TravelerAllowed = false,
+            StaffScopeNote = "Giám sát công suất trạm & tối ưu bảo trì ngăn tủ",
+            RiskLevel = "LOW"
+        },
+        new()
+        {
             Code = "SECURITY_AUDIT_LOGS",
             Module = "An ninh & Truy vết (UC-A08)",
             Name = "Tra cứu nhật ký truy vết an ninh toàn hệ thống (Audit Logs)",
