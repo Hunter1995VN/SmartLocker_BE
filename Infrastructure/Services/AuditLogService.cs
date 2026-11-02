@@ -64,7 +64,7 @@ public class AuditLogService : IAuditLogService
         // Thống kê tổng quan trên toàn bộ AuditLogs an ninh
         var totalAll = await baseQuery.CountAsync();
         var unlockCount = await baseQuery.CountAsync(a => a.Action.Contains("UNLOCK"));
-        var policyCount = await baseQuery.CountAsync(a => a.Action.Contains("PRICING") || a.Action.Contains("STATION") || a.Action.Contains("LOCKER") || a.Action.Contains("RECONCIL") || a.Action.Contains("REFUND") || a.Action.Contains("VOUCHER") || a.Action.Contains("CAMPAIGN") || a.Action.Contains("PROMO"));
+        var policyCount = await baseQuery.CountAsync(a => a.Action.Contains("PRICING") || a.Action.Contains("STATION") || a.Action.Contains("LOCKER") || a.Action.Contains("RECONCIL") || a.Action.Contains("REFUND") || a.Action.Contains("VOUCHER") || a.Action.Contains("CAMPAIGN") || a.Action.Contains("PROMO") || a.Action.Contains("REPORT"));
         var userSecCount = await baseQuery.CountAsync(a => a.Action.Contains("USER") || a.Action.Contains("STAFF") || a.Action.Contains("DEBT") || a.Action.Contains("LOGIN"));
         var abandonedCount = await baseQuery.CountAsync(a => a.Action.Contains("ABANDONED"));
 

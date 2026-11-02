@@ -1,4 +1,7 @@
 using System.Text;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
 using API.Middleware;
 using Application.Interfaces;
 using Infrastructure.Data;
@@ -14,6 +17,24 @@ using SmartInfrastructure;
 using Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("kiosk", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
+
+var keyFolder = builder.Configuration["TicketProtection:KeyDirectory"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys");
+var protection = builder.Services.AddDataProtection().SetApplicationName("SmartLocker.AccessTickets")
+    .PersistKeysToFileSystem(new DirectoryInfo(keyFolder));
+var certificateThumbprint = builder.Configuration["TicketProtection:CertificateThumbprint"];
+if (!string.IsNullOrWhiteSpace(certificateThumbprint)) protection.ProtectKeysWithCertificate(certificateThumbprint);
+else if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
+else throw new InvalidOperationException("Configure TicketProtection:CertificateThumbprint to encrypt the persisted ticket key ring.");
+builder.Services.AddSingleton<IAccessPinProtector, API.Services.AccessPinProtector>();
 
 // === Controllers + JSON enum serialization ===
 builder.Services.AddControllers()
@@ -154,6 +175,7 @@ app.Use(async (context, next) =>
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 app.MapHub<API.Hubs.LockerHub>("/hubs/locker");
 

@@ -24,6 +24,7 @@ public class KioskCheckInRequest
 
 public class KioskCheckInResponse
 {
+    public string? SessionToken { get; set; }
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
     public Guid LockerId { get; set; }
@@ -35,6 +36,7 @@ public class KioskCheckInResponse
 
 public class KioskCheckOutRequest
 {
+    public string? SessionToken { get; set; }
     public Guid StationId { get; set; }
     public string CredentialType { get; set; } = "QR"; // "QR" or "ACCESS_CODE"
     public string Payload { get; set; } = string.Empty;
@@ -42,6 +44,7 @@ public class KioskCheckOutRequest
 
 public class KioskCheckOutResponse
 {
+    public string? SessionToken { get; set; }
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
     public Guid? LockerId { get; set; }
@@ -52,6 +55,11 @@ public class KioskCheckOutResponse
     public string? CheckoutUrl { get; set; }
     public string? DoorState { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+public class KioskFeePaymentRequest : KioskCheckOutRequest
+{
+    public Guid BookingId { get; set; }
 }
 
 public class KioskManualConfirmRequest
@@ -78,6 +86,21 @@ public class KioskStationStatusResponse
     public Guid StationId { get; set; }
     public string StationName { get; set; } = string.Empty;
     public string StationAddress { get; set; } = string.Empty;
-    public string ConnectivityStatus { get; set; } = "ONLINE";
+    public string ConnectivityStatus { get; set; } = "OFFLINE";
     public List<KioskLockerItemDto> Lockers { get; set; } = new();
+}
+
+public class KioskOperationStatusRequest
+{
+    public Guid StationId { get; set; }
+    public Guid BookingId { get; set; }
+    public string SessionToken { get; set; } = string.Empty;
+}
+public class KioskOperationStatusResponse
+{
+    public string BookingStatus { get; set; } = string.Empty;
+    public string Operation { get; set; } = string.Empty;
+    public string DoorState { get; set; } = string.Empty;
+    public bool Complete { get; set; }
+    public bool ManualReviewPending { get; set; }
 }

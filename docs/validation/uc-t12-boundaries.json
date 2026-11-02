@@ -1,0 +1,30 @@
+{
+  "checkedAt": "2026-10-31T08:29:14.5448155Z",
+  "level": "Actual API and SQL; invalid access attempts; no unlock expected",
+  "checks": [
+    {
+      "status": "PASS",
+      "name": "Expired or rotated QR cannot unlock pickup"
+    },
+    {
+      "status": "PASS",
+      "name": "Stored booking cannot deposit twice"
+    },
+    {
+      "status": "PASS",
+      "name": "Wrong station cannot unlock pickup"
+    },
+    {
+      "status": "PASS",
+      "name": "Owner web action cannot bypass physical checkout"
+    },
+    {
+      "status": "PASS",
+      "name": "Second API process reads identical protected eight-digit PIN"
+    },
+    {
+      "status": "PASS",
+      "name": "Rejected calls leave real booking STORED"
+    }
+  ]
+}

@@ -17,18 +17,20 @@ public class PaymentService : IPaymentService
     private readonly ISmartLockerDbContext _context;
     private readonly IPaymentGatewayService _paymentGateway;
     private readonly IOfflineTicketService _offlineTicketService;
+    private readonly IAccessPinProtector _pinProtector;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         ISmartLockerDbContext context,
         IPaymentGatewayService paymentGateway,
         IOfflineTicketService offlineTicketService,
-        ILogger<PaymentService> logger)
+        ILogger<PaymentService> logger, IAccessPinProtector pinProtector)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _offlineTicketService = offlineTicketService;
         _logger = logger;
+        _pinProtector = pinProtector;
     }
 
     public async Task<ApiResponse<PaymentResultDto>> ProcessPayOSWebhookAsync(object webhookData)
@@ -215,11 +217,8 @@ public class PaymentService : IPaymentService
         {
             payment.Booking.Status = BookingStatus.CONFIRMED;
 
-            // Chuẩn hóa mã PIN mở tủ thành 6 chữ số an toàn (100000 - 999999)
-            var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-            using var sha256 = SHA256.Create();
-            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
-            var hashString = Convert.ToBase64String(hashBytes);
+            var randomCode = RandomNumberGenerator.GetInt32(0, 100000000).ToString("D8");
+            var hashString = OnlineTicket.HashPin(randomCode);
 
             var offlineNonce = Guid.NewGuid().ToString("N");
             var offlineExpiresAt = payment.Booking.EndAt > DateTime.UtcNow
@@ -228,22 +227,21 @@ public class PaymentService : IPaymentService
 
             var hmacToken = _offlineTicketService.GenerateHmacToken(payment.Booking, randomCode, offlineExpiresAt, offlineNonce);
 
-            _context.AccessCredentials.Add(new AccessCredential
+            var credential = new AccessCredential
             {
                 BookingId = payment.BookingId,
-                QrPayload = hmacToken,
-                QrNonce = offlineNonce,
-                QrExpiresAt = offlineExpiresAt,
                 AccessCodeHash = hashString,
+                ProtectedAccessCode = _pinProtector.Protect(payment.BookingId, randomCode),
                 OfflinePayload = hmacToken,
                 OfflineNonce = offlineNonce,
                 OfflineExpiresAt = offlineExpiresAt,
                 IsActive = true,
                 IssuedAt = DateTime.UtcNow
-            });
+            };
+            OnlineTicket.Rotate(credential, payment.Booking.StationId, DateTime.UtcNow);
+            _context.AccessCredentials.Add(credential);
 
-            _logger.LogInformation("Booking {Code} confirmed. AccessCode: {AccessCode}, OfflineHMAC generated",
-                payment.Booking.BookingCode, randomCode);
+            _logger.LogInformation("Booking {Code} confirmed and access tickets issued", payment.Booking.BookingCode);
         }
         else if (payment.Kind == PaymentKind.EXTENSION)
         {
@@ -281,16 +279,16 @@ public class PaymentService : IPaymentService
                         if (cred != null)
                         {
                             var newExpires = newEndAt.AddHours(24);
-                            cred.QrExpiresAt = newExpires;
                             cred.OfflineExpiresAt = newExpires;
 
                             var pin = _offlineTicketService.ExtractPinFromCredential(cred);
                             var nonce = Guid.NewGuid().ToString("N");
-                            var newHmac = _offlineTicketService.GenerateHmacToken(payment.Booking, pin, newExpires, nonce);
-                            cred.OfflinePayload = newHmac;
-                            cred.QrPayload = newHmac;
-                            cred.OfflineNonce = nonce;
-                            cred.QrNonce = nonce;
+                            if (!string.IsNullOrEmpty(pin))
+                            {
+                                cred.OfflinePayload = _offlineTicketService.GenerateHmacToken(payment.Booking, pin, newExpires, nonce);
+                                cred.OfflineNonce = nonce;
+                            }
+                            OnlineTicket.Rotate(cred, payment.Booking.StationId, DateTime.UtcNow);
                         }
                     }
                 }

@@ -40,6 +40,7 @@ public class BookingExpirationJob : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<ISmartLockerDbContext>();
                 var paymentGateway = scope.ServiceProvider.GetRequiredService<IPaymentGatewayService>();
+                var paymentService = scope.ServiceProvider.GetRequiredService<IPaymentService>();
                 var promotionService = scope.ServiceProvider.GetService<IPromotionVoucherService>();
 
                 var now = DateTime.UtcNow;
@@ -66,41 +67,9 @@ public class BookingExpirationJob : BackgroundService
 
                             if (string.Equals(payOsStatus, "PAID", StringComparison.OrdinalIgnoreCase))
                             {
-                                payment.Status = PaymentStatus.PAID;
-                                payment.PaidAt = DateTime.UtcNow;
-                                payment.Gateway = "PAYOS";
-                                payment.WebhookReceivedAt = DateTime.UtcNow;
-
-                                booking.Status = BookingStatus.CONFIRMED;
-
-                                var randomCode = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-                                using var sha256 = SHA256.Create();
-                                var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(randomCode));
-                                var hashString = Convert.ToBase64String(hashBytes);
-
-                                var qrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                                    JsonSerializer.Serialize(new
-                                    {
-                                        bookingId = booking.Id,
-                                        bookingCode = booking.BookingCode,
-                                        stationId = booking.StationId,
-                                        accessCode = randomCode,
-                                        nonce = Guid.NewGuid().ToString("N"),
-                                        expiresAt = booking.EndAt
-                                    })));
-
-                                context.AccessCredentials.Add(new AccessCredential
-                                {
-                                    BookingId = booking.Id,
-                                    QrPayload = qrPayload,
-                                    QrNonce = Guid.NewGuid().ToString("N"),
-                                    QrExpiresAt = booking.EndAt,
-                                    AccessCodeHash = hashString,
-                                    OfflinePayload = randomCode,
-                                    OfflineNonce = Guid.NewGuid().ToString("N"),
-                                    IsActive = true,
-                                    IssuedAt = DateTime.UtcNow
-                                });
+                                // All payment entry points use the same protected PIN / dynamic QR issuer.
+                                var synced = await paymentService.SyncPaymentStatusAsync(orderCode);
+                                if (!synced.Success || synced.Data?.IsSuccess != true) continue;
 
                                 if (booking.Locker != null)
                                 {

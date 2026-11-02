@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-31T08:18:28.4490029Z",
+  "level": "Actual paid order; production API/shared SQL; owner authorized legacy upgrade; no unlock",
+  "upgradeStatus": 204,
+  "repeatStatus": 204,
+  "pinEightDigits": true,
+  "pinChanged": true,
+  "state": "CONFIRMED",
+  "paymentUnchanged": true,
+  "cacheNoStore": true,
+  "offlineSamePin": true,
+  "offlineDoesNotOverwriteQr": true,
+  "offlineUsesSeparatePayload": true
+}

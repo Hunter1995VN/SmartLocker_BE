@@ -1,0 +1,21 @@
+{
+  "mode": "Actual SQL read only; no lifecycle or sensor writes",
+  "Status": "COMPLETED",
+  "CheckedInAt": "2026-10-31T08:20:52.399",
+  "StartAt": "2026-10-31T08:20:52.399",
+  "EndAt": "2026-10-31T09:20:52.399",
+  "CheckedOutAt": "2026-10-31T08:31:09.49",
+  "LockerCode": "SIM-MQTT-01",
+  "BusinessStatus": "AVAILABLE",
+  "DoorState": "CLOSED",
+  "LastDoorEventAt": "2026-10-31T08:31:09.49",
+  "ProtectedPin": 1,
+  "IsActive": false,
+  "RevokedAt": "2026-10-31T08:31:09.3158671",
+  "PaymentStatus": "PAID",
+  "Amount": 15000.00,
+  "PaidAt": "2026-10-31T08:11:32.5894131",
+  "ConnectivityStatus": "ONLINE",
+  "LastSeenAt": "2026-10-31T08:31:32.7422378",
+  "CheckedUtc": "2026-10-31T08:31:40.9159778"
+}

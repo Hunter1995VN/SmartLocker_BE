@@ -32,6 +32,7 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.CancelPolicyRate).HasPrecision(4, 2);
         builder.Property(x => x.CheckInPhotoUrl).HasMaxLength(1000);
         builder.Property(x => x.ManualConfirmPhotoUrl).HasMaxLength(1000);
+        builder.Property(x => x.KioskSessionHash).HasMaxLength(64);
         builder.Property(x => x.ExtensionCount).HasDefaultValue(0);
 
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
