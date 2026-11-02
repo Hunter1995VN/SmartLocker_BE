@@ -18,6 +18,7 @@ public interface ISmartLockerDbContext
     DbSet<MaintenanceTicket> MaintenanceTickets { get; }
     DbSet<AbandonedPropertyRecord> AbandonedPropertyRecords { get; }
     DbSet<AuditLog> AuditLogs { get; }
+    DbSet<Voucher> Vouchers { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade Database { get; }
