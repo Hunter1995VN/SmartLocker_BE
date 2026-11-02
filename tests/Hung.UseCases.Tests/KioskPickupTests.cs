@@ -114,6 +114,35 @@ public class KioskPickupTests : IDisposable
         Assert.False((await Pickup()).Success); Assert.Null(booking.CheckedOutAt);
         Assert.Equal(BookingStatus.STORED, booking.Status); Assert.True(booking.AccessCredential!.IsActive);
     }
+    [Fact] public async Task LegacyDemoCannotMarkAnInvoicePaidOrChangeRentalTime()
+    {
+        PreparePickup(); var end = booking.EndAt;
+        var invoice = new Payment { Id = Guid.NewGuid(), BookingId = booking.Id,
+            Kind = PaymentKind.OVERDUE, Status = PaymentStatus.PENDING, Amount = 30000 };
+        db.Payments.Add(invoice); await db.SaveChangesAsync();
+        var result = await Service.ConfirmOverduePaymentDemoAsync(new() { BookingId = booking.Id });
+        Assert.False(result.Success); Assert.Equal(PaymentStatus.PENDING, invoice.Status);
+        Assert.Equal(end, booking.EndAt); Assert.Equal(BookingStatus.STORED, booking.Status);
+        mqtt.VerifyNoOtherCalls();
+    }
+    [Fact] public async Task BookingIdentifierAloneCannotCreateAKioskFeeInvoice()
+    {
+        PreparePickup(); await db.SaveChangesAsync(); var count = await db.Payments.CountAsync();
+        var result = await Service.CreateOverduePaymentAsync(new() { BookingId = booking.Id, StationId = booking.StationId });
+        Assert.False(result.Success); Assert.Equal(count, await db.Payments.CountAsync()); mqtt.VerifyNoOtherCalls();
+    }
+    [Theory] [InlineData("OPEN")] [InlineData("UNKNOWN")]
+    public async Task PickupDoesNotPulseAnAlreadyOpenOrUnknownDoor(string state)
+    {
+        PreparePickup(); locker.DoorState = state; await db.SaveChangesAsync();
+        Assert.False((await Pickup()).Success); Assert.Null(booking.CheckedOutAt);
+        mqtt.VerifyNoOtherCalls();
+    }
+    [Fact] public async Task PickupRejectsAnAssignedCompartmentOfAnotherSize()
+    {
+        PreparePickup(); locker.Size = LockerSize.L; await db.SaveChangesAsync();
+        Assert.False((await Pickup()).Success); mqtt.VerifyNoOtherCalls();
+    }
     [Theory] [InlineData("OFFLINE")] [InlineData("STALE")]
     public async Task UnavailableDeviceCannotReceivePickup(string state)
     {
@@ -159,16 +188,21 @@ public class KioskPickupTests : IDisposable
         var fee = (await Pickup()).Data!;
         var payments = new Mock<IBookingService>();
         payments.Setup(x => x.PayOverdueFeeAsync(booking.UserId, booking.Id)).ReturnsAsync(
-            Application.DTOs.Common.ApiResponse<Application.DTOs.Booking.CreateBookingResponse>.SuccessResponse(new() { Amount = 30000 }));
+            Application.DTOs.Common.ApiResponse<Application.DTOs.Booking.CreateBookingResponse>.SuccessResponse(new() {
+                BookingId = booking.Id, BookingCode = booking.BookingCode, Amount = 30000, PaymentUrl = "https://unit.invalid/fee" }));
         var service = new KioskService(db, mqtt.Object, notifications.Object, pricing.Object, NullLogger<KioskService>.Instance, payments.Object);
         var request = new KioskFeePaymentRequest { BookingId = booking.Id, StationId = booking.StationId,
             CredentialType = "ACCESS_CODE", Payload = "01234567", SessionToken = fee.SessionToken };
         Assert.True((await service.PayOverdueAsync(request)).Success);
+        var adapted = await service.CreateOverduePaymentAsync(new() { BookingId = booking.Id, StationId = booking.StationId,
+            CredentialType = request.CredentialType, Payload = request.Payload, SessionToken = request.SessionToken });
+        Assert.True(adapted.Success); Assert.Equal(booking.Id, adapted.Data!.BookingId);
+        Assert.Equal(30000, adapted.Data.Amount); Assert.Equal("https://unit.invalid/fee", adapted.Data.PaymentUrl);
         request.Payload = "76543210"; Assert.False((await service.PayOverdueAsync(request)).Success);
         request.Payload = "01234567";
         (await db.IoTDevices.SingleAsync()).ConnectivityStatus = "OFFLINE"; await db.SaveChangesAsync();
         Assert.False((await service.PayOverdueAsync(request)).Success);
-        payments.Verify(x => x.PayOverdueFeeAsync(booking.UserId, booking.Id), Times.Once); mqtt.VerifyNoOtherCalls();
+        payments.Verify(x => x.PayOverdueFeeAsync(booking.UserId, booking.Id), Times.Exactly(2)); mqtt.VerifyNoOtherCalls();
     }
     [Fact] public async Task OverdueLinkUsesOutstandingAmountAndDoesNotDependOnStaleFlag()
     {

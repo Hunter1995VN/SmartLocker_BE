@@ -73,7 +73,7 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/kiosk/confirm-overdue-payment: Xác nhận thanh toán phụ phí quá hạn tại Kiosk (hỗ trợ demo/test nhanh UC-T19)
+    /// Legacy demo route: never confirms payment without real gateway verification.
     /// </summary>
     [HttpPost("confirm-overdue-payment")]
     public async Task<IActionResult> ConfirmOverduePayment([FromBody] KioskOverduePaymentRequest request)

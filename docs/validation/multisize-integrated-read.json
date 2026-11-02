@@ -1,0 +1,66 @@
+{
+  "checkedUtc": "2026-11-02T15:12:43.3062821Z",
+  "actualApi": true,
+  "getDidNotInsertData": true,
+  "prototypeFound": true,
+  "totals": {
+    "L": 1,
+    "M": 1,
+    "S": 1
+  },
+  "sizePrices": [
+    {
+      "size": "S",
+      "pricePerBlock": 15000.0,
+      "blockHours": 1,
+      "minHours": 1,
+      "maxHours": 72
+    },
+    {
+      "size": "M",
+      "pricePerBlock": 25000.0,
+      "blockHours": 1,
+      "minHours": 1,
+      "maxHours": 72
+    },
+    {
+      "size": "L",
+      "pricePerBlock": 40000.0,
+      "blockHours": 1,
+      "minHours": 1,
+      "maxHours": 72
+    }
+  ],
+  "lockers": [
+    {
+      "lockerId": "7590fdc1-6057-4764-96dc-bfe3fc7142d3",
+      "lockerCode": "SIM-MQTT-01",
+      "size": "S",
+      "businessStatus": "AVAILABLE",
+      "healthStatus": "HEALTHY",
+      "doorState": "CLOSED",
+      "connectivityStatus": "ONLINE",
+      "lastDoorEventAt": "2026-11-02T14:35:28.404"
+    },
+    {
+      "lockerId": "68cd456e-b320-49c9-b5ac-3b8f8196a954",
+      "lockerCode": "BT-M-01",
+      "size": "M",
+      "businessStatus": "AVAILABLE",
+      "healthStatus": "HEALTHY",
+      "doorState": "OPEN",
+      "connectivityStatus": "ONLINE",
+      "lastDoorEventAt": "2026-11-02T14:50:15.365"
+    },
+    {
+      "lockerId": "a6eb0efc-67df-4e9c-bee3-0888c2327bca",
+      "lockerCode": "BT-L-01",
+      "size": "L",
+      "businessStatus": "AVAILABLE",
+      "healthStatus": "HEALTHY",
+      "doorState": "OPEN",
+      "connectivityStatus": "ONLINE",
+      "lastDoorEventAt": "2026-11-02T14:52:42.219"
+    }
+  ]
+}

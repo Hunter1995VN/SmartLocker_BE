@@ -55,6 +55,14 @@ public sealed class IntegrationCompatibilityTests : IDisposable
         Assert.Equal(2, preview.DailyCancellationCount); Assert.True(preview.IsDailyLimitExceeded);
         Assert.Equal(0m, preview.RefundAmount);
     }
+    [Fact] public async Task SimulationRouteCannotBackdateAnActualBooking()
+    {
+        var booking = Seed(true); booking.Status = BookingStatus.STORED; await db.SaveChangesAsync();
+        var start = booking.StartAt; var end = booking.EndAt;
+        var result = await Service.SimulateOverdueAsync(owner, booking.Id, 2);
+        Assert.False(result.Success); Assert.Equal(start, booking.StartAt); Assert.Equal(end, booking.EndAt);
+        Assert.False(booking.IsOverdue); Assert.Equal(BookingStatus.STORED, booking.Status);
+    }
     [Fact] public void VoucherDateAliasesCannotInventExtraSqlColumns()
     {
         var entity = db.Model.FindEntityType(typeof(Voucher))!;
