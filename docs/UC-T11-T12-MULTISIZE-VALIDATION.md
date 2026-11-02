@@ -16,7 +16,7 @@ Status: paid M and L deposit/pickup accepted on real hardware; final integration
 
 ## Validation completed
 
-- Backend: 111/111 tests pass, including independent S/M/L deposit/pickup cases, wrong-size rejection, cross-compartment event isolation, ticket revocation, capacity and existing UC regressions. Test fixtures/events only use isolated EF InMemory; they never connect to the shared DB or broker.
+- Backend: 118/118 tests pass, including independent S/M/L deposit/pickup cases, wrong-size rejection, cross-compartment event isolation, ticket revocation, capacity and existing UC regressions. Test fixtures/events only use isolated EF InMemory; they never connect to the shared DB or broker.
 - Frontend: TypeScript and production build pass; three quote/UTC tests pass. Existing bundle/dynamic-import warnings remain.
 - Broker: authentication/topic ACL tests pass (2/2).
 - Firmware: ESP32 3.2.0 / esp32:esp32:esp32 compile passes; 930,208-byte app flashed on the real ESP32 at COM5, with esptool hash verification. A verified 4,194,304-byte pre-update backup was read in 64 blocks and retained only in ignored local storage.
@@ -47,3 +47,12 @@ Private account, payment, ticket, serial and backup artifacts remain under API/A
 - L: all four old-PIN/QR check-in/out replays returned HTTP400. Owner booking reads for both M/L hide PIN, online QR and offline credentials after completion.
 - Final actual station read after the user's last closure: S/M/L all AVAILABLE, CLOSED and ONLINE. Door states remain live telemetry, not fixed display values.
 - Both real paid cases were early pickups. No optical camera scan, actual overdue bank transfer, lost-and-found incident or staff camera fallback is claimed in this expansion.
+## Integration with team dev
+
+Integrated with BE dev a319c90 and FE dev 942c813. GPS search, radius sorting, station policies, reporting and cancellation work were preserved. Conflict resolution removed the new GET-time station/locker seeder: actual GET checks confirmed no added Stations/Lockers/PricingPolicies/Payments records. Voucher StartDate/EndDate names were restored to the actual SQL schema; no schema changes were applied for integration. Incoming stray braces, CancelPreview DTO mismatch and duplicate kiosk fee routes were repaired in a separate integration commit. Cancellation preview uses only verified PAID amounts, with isolated regression tests.
+
+The added anonymous demo payment confirmation and rental-time backdating paths now refuse mutation. The alternate fee-link route is distinct and delegates to the existing credential/session/device gate, with no default invented price or minimum fake overdue hour. Real confirmation remains PayOS synchronization. Negative checks against the actual API returned HTTP400 for missing sessions/demo requests.
+
+Final software suite: 118 backend tests, two broker tests, three frontend tests, TypeScript and production build pass. Paid physical M/L acceptance above was performed before adding the team's new features; after integration, API/read-only SQL checks revalidated mapping, actual availability, GPS, no GET inserts and protected failure paths. No extra payment was fabricated or charged to repeat the integrated read checks. React, nullable and bundle warnings remain as documented.
+
+All-three CLOSED/ONLINE was observed at the end of physical acceptance. A later integrated read saw empty M/L OPEN and S CLOSED while still ONLINE; those are subsequent actual sensor readings. Open empty compartments correctly remain unavailable for new deposits. Do not describe the earlier snapshot as the current fixed state.

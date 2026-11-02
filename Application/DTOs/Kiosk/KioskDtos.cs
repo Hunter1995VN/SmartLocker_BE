@@ -70,6 +70,9 @@ public class KioskOverduePaymentRequest
     public Guid? BookingId { get; set; }
     public string? BookingCode { get; set; }
     public Guid? StationId { get; set; }
+    public string CredentialType { get; set; } = "QR";
+    public string Payload { get; set; } = string.Empty;
+    public string? SessionToken { get; set; }
 }
 
 public class KioskOverduePaymentResponse

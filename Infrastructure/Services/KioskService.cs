@@ -1,4 +1,4 @@
-﻿namespace Infrastructure.Services;
+namespace Infrastructure.Services;
 
 using System.Security.Cryptography;
 using System.Text;
@@ -394,87 +394,30 @@ public class KioskService : IKioskService
 
     public async Task<ApiResponse<KioskOverduePaymentResponse>> CreateOverduePaymentAsync(KioskOverduePaymentRequest request)
     {
-        Booking? booking = null;
-        if (request.BookingId.HasValue)
-        {
-            booking = await _context.Bookings.Include(b => b.Station).Include(b => b.Locker).Include(b => b.PricingPolicy).Include(b => b.Payments)
-                .FirstOrDefaultAsync(b => b.Id == request.BookingId.Value);
-        }
-        else if (!string.IsNullOrWhiteSpace(request.BookingCode))
-        {
-            var code = request.BookingCode.Trim().ToUpper();
-            booking = await _context.Bookings.Include(b => b.Station).Include(b => b.Locker).Include(b => b.PricingPolicy).Include(b => b.Payments)
-                .FirstOrDefaultAsync(b => b.BookingCode == code);
-        }
-        if (booking == null) return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Không tìm thấy đơn đặt tủ.");
-
+        if (!request.BookingId.HasValue || !request.StationId.HasValue
+            || request.SessionToken?.Length != 64 || string.IsNullOrWhiteSpace(request.Payload))
+            return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Vui lòng xác thực QR/PIN tại Kiosk để nhận phiên thanh toán. Mã đơn không thay thế quyền truy cập.");
+        var payment = await PayOverdueAsync(new KioskFeePaymentRequest {
+            BookingId = request.BookingId.Value, StationId = request.StationId.Value,
+            CredentialType = request.CredentialType, Payload = request.Payload, SessionToken = request.SessionToken
+        });
+        if (!payment.Success || payment.Data == null)
+            return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse(payment.Message ?? "Không thể tạo thanh toán phụ phí.");
+        var booking = await _context.Bookings.Include(b => b.PricingPolicy).FirstOrDefaultAsync(b => b.Id == request.BookingId.Value);
+        if (booking == null) return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Không tìm thấy đơn.");
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
-        var grace = policy?.GracePeriodMinutes ?? 15;
-        var overdueHours = (int)Math.Max(1, Math.Ceiling((DateTime.UtcNow - booking.EndAt.AddMinutes(grace)).TotalHours));
-        var feePerHour = policy?.OverdueFeePerHour ?? 10000m;
-        var overdueFee = overdueHours * feePerHour;
-
-        if (_paymentGateway == null)
-            return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Cổng thanh toán chưa được cấu hình.");
-
-        var orderCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmm") + System.Security.Cryptography.RandomNumberGenerator.GetInt32(1000, 10000));
-        var expiresAt = DateTime.UtcNow.AddMinutes(15);
-        var payment = new Payment
-        {
-            BookingId = booking.Id,
-            Kind = PaymentKind.OVERDUE,
-            Status = PaymentStatus.PENDING,
-            Amount = overdueFee,
-            OrderCode = orderCode.ToString(),
-            ExpiresAt = expiresAt,
-            Gateway = "PAYOS"
-        };
-        _context.Payments.Add(payment);
-        await _context.SaveChangesAsync();
-
-        var link = await _paymentGateway.CreatePaymentLinkAsync(orderCode, (int)overdueFee, $"Qua han {booking.BookingCode}", "", "");
-        payment.PaymentLink = link.CheckoutUrl;
-        payment.GatewayTxnId = link.PaymentLinkId;
-        await _context.SaveChangesAsync();
-
-        return ApiResponse<KioskOverduePaymentResponse>.SuccessResponse(new KioskOverduePaymentResponse
-        {
-            BookingId = booking.Id,
-            BookingCode = booking.BookingCode,
-            OverdueHours = overdueHours,
-            OverdueFeePerHour = feePerHour,
-            Amount = overdueFee,
-            PaymentUrl = link.CheckoutUrl,
-            PaymentExpiresAt = expiresAt,
-            QrCode = link.QrCode,
-            AccountNumber = link.AccountNumber,
-            AccountName = link.AccountName,
-            Bin = link.Bin,
-            OrderCode = orderCode
-        }, "Tạo yêu cầu thanh toán phụ phí quá hạn thành công.");
+        if (policy == null) return ApiResponse<KioskOverduePaymentResponse>.ErrorResponse("Không có chính sách phụ phí hợp lệ.");
+        var data = payment.Data;
+        return ApiResponse<KioskOverduePaymentResponse>.SuccessResponse(new() {
+            BookingId = data.BookingId, BookingCode = data.BookingCode,
+            OverdueHours = (int)Math.Max(0, Math.Ceiling(((DateTime.UtcNow - booking.EndAt).TotalMinutes - policy.GracePeriodMinutes) / 60)),
+            OverdueFeePerHour = policy.OverdueFeePerHour, Amount = data.Amount,
+            PaymentUrl = data.PaymentUrl, PaymentExpiresAt = data.PaymentExpiresAt,
+            QrCode = data.QrCode, AccountNumber = data.AccountNumber, AccountName = data.AccountName,
+            Bin = data.Bin, OrderCode = data.OrderCode
+        });
     }
 
-    public async Task<ApiResponse<bool>> ConfirmOverduePaymentDemoAsync(KioskOverduePaymentRequest request)
-    {
-        Booking? booking = null;
-        if (request.BookingId.HasValue)
-            booking = await _context.Bookings.Include(b => b.Payments).FirstOrDefaultAsync(b => b.Id == request.BookingId.Value);
-        else if (!string.IsNullOrWhiteSpace(request.BookingCode))
-            booking = await _context.Bookings.Include(b => b.Payments).FirstOrDefaultAsync(b => b.BookingCode == request.BookingCode.Trim().ToUpper());
-        if (booking == null) return ApiResponse<bool>.ErrorResponse("Không tìm thấy đơn.");
-
-        var payment = booking.Payments.OrderByDescending(p => p.CreatedAt).FirstOrDefault(p => p.Kind == PaymentKind.OVERDUE && p.Status == PaymentStatus.PENDING);
-        if (payment != null)
-        {
-            payment.Status = PaymentStatus.PAID;
-            payment.PaidAt = DateTime.UtcNow;
-        }
-        booking.IsOverdue = false;
-        booking.OverdueSince = null;
-        booking.EndAt = DateTime.UtcNow.AddMinutes(15);
-        booking.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-        return ApiResponse<bool>.SuccessResponse(true, "Xác nhận thanh toán quá hạn thành công.");
-    }
-
+    public Task<ApiResponse<bool>> ConfirmOverduePaymentDemoAsync(KioskOverduePaymentRequest request) =>
+        Task.FromResult(ApiResponse<bool>.ErrorResponse("Không hỗ trợ xác nhận thanh toán giả. Trạng thái chỉ được cập nhật qua đối soát PayOS thật."));
 }

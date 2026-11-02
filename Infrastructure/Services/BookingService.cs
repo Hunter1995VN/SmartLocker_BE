@@ -597,39 +597,8 @@ public class BookingService : IBookingService
         return ApiResponse<CancelPreviewDto>.SuccessResponse(preview);
     }
 
-    public async Task<ApiResponse<BookingDto>> SimulateOverdueAsync(Guid userId, Guid bookingId, int hoursOverdue = 2)
-    {
-        var booking = await _context.Bookings
-            .Include(b => b.Station)
-            .Include(b => b.Locker)
-            .Include(b => b.PricingPolicy)
-            .Include(b => b.Payments)
-            .Include(b => b.AccessCredential)
-            .FirstOrDefaultAsync(b => b.Id == bookingId);
-
-        if (booking == null)
-            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy thông tin đặt tủ.");
-
-        if (booking.UserId != userId)
-            return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền can thiệp đơn này.");
-
-        var now = DateTime.UtcNow;
-        if (booking.Status != BookingStatus.STORED && booking.Status != BookingStatus.CONFIRMED)
-            return ApiResponse<BookingDto>.ErrorResponse("Chỉ có thể mô phỏng quá hạn cho đơn đang lưu trữ (STORED) hoặc đã xác nhận (CONFIRMED).");
-
-        var graceMinutes = booking.PricingPolicy?.GracePeriodMinutes ?? 15;
-        booking.CheckedInAt = now.AddHours(-(hoursOverdue + 2));
-        booking.StartAt = booking.CheckedInAt.Value;
-        booking.EndAt = now.AddHours(-hoursOverdue).AddMinutes(-(graceMinutes + 5));
-        booking.IsOverdue = true;
-        booking.OverdueSince = booking.EndAt.AddMinutes(graceMinutes);
-        booking.UpdatedAt = now;
-
-        await _context.SaveChangesAsync();
-        return await GetBookingByIdAsync(userId, bookingId);
-    }
-
-
+    public Task<ApiResponse<BookingDto>> SimulateOverdueAsync(Guid userId, Guid bookingId, int hoursOverdue = 2) =>
+        Task.FromResult(ApiResponse<BookingDto>.ErrorResponse("Không hỗ trợ thay đổi thời gian giả trên đơn thật. Phụ phí được tính từ thời gian sử dụng và thanh toán đã xác minh."));
     /// <summary>
     /// UC-T09: Thanh toán phụ phí quá hạn
     /// Bảo vệ chống concurrency double-click (TC_BKO_20) bằng SemaphoreSlim lock & Idempotency check.
