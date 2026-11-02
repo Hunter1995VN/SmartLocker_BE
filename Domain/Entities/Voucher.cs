@@ -16,8 +16,8 @@ public class Voucher
     public decimal DiscountValue { get; set; }
     public decimal? MaxDiscountAmount { get; set; }
     public decimal MinOrderAmount { get; set; }
-    public DateTime ValidFrom { get; set; }
-    public DateTime ValidTo { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
     public int UsageLimit { get; set; }
     public int UsedCount { get; set; }
     public bool IsActive { get; set; }

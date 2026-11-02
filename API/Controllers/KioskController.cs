@@ -58,9 +58,9 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/kiosk/pay-overdue: Tạo mã VietQR PayOS thanh toán phụ phí quá hạn trực tiếp trên Kiosk (UC-T19)
+    /// POST /api/kiosk/overdue/payment: Tạo yêu cầu phụ phí từ màn hình tra cứu Kiosk (UC-T19)
     /// </summary>
-    [HttpPost("pay-overdue")]
+    [HttpPost("overdue/payment")]
     public async Task<IActionResult> CreateOverduePayment([FromBody] KioskOverduePaymentRequest request)
     {
         var result = await _kioskService.CreateOverduePaymentAsync(request);

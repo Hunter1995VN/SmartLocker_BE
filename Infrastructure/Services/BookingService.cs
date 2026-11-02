@@ -449,7 +449,7 @@ public class BookingService : IBookingService
         var wasPendingPayment = booking.Status == BookingStatus.PENDING_PAYMENT;
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var paidAmount = basePayment?.Amount ?? booking.TotalAmount;
+        var paidAmount = basePayment?.Amount ?? 0m;
 
         var now = DateTime.UtcNow;
         var todayStart = now.Date;
@@ -531,7 +531,7 @@ public class BookingService : IBookingService
 
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var paidAmount = basePayment?.Amount ?? booking.TotalAmount;
+        var paidAmount = basePayment?.Amount ?? 0m;
 
         var now = DateTime.UtcNow;
         var todayStart = now.Date;
@@ -583,12 +583,14 @@ public class BookingService : IBookingService
             BookingCode = booking.BookingCode,
             StationName = booking.Station?.Name ?? "Trạm tủ",
             StartAt = booking.StartAt,
+            Status = booking.Status.ToString(),
+            CanCancel = booking.Status is BookingStatus.PENDING_PAYMENT or BookingStatus.CONFIRMED,
             PaidAmount = paidAmount,
             RefundRate = refundRate,
             RefundAmount = refundAmount,
             PolicyTier = policyTier,
             PolicyDescription = policyDesc,
-            DailyCancelledCountToday = dailyCancelledCount,
+            DailyCancellationCount = dailyCancelledCount,
             IsDailyLimitExceeded = dailyCancelledCount >= 2
         };
 
