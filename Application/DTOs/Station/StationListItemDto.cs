@@ -17,4 +17,8 @@ public class StationListItemDto
     public int AvailableM { get; set; }
     public int AvailableL { get; set; }
     public string? ContactPhone { get; set; }
+    public decimal? PriceS { get; set; }
+    public decimal? PriceM { get; set; }
+    public decimal? PriceL { get; set; }
+    public double? DistanceKm { get; set; }
 }
