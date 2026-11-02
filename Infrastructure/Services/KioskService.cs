@@ -133,13 +133,8 @@ public class KioskService : IKioskService
         Locker? assignedLocker = booking.Locker;
         if (assignedLocker == null)
         {
-            assignedLocker = await _context.Lockers
-                .Where(l => l.StationId == request.StationId && l.Size == booking.Size
-                    && l.BusinessStatus == LockerBusinessStatus.AVAILABLE
-                    && l.HealthStatus == LockerHealthStatus.HEALTHY
-                    && l.DoorState == "CLOSED"
-                    && _context.IoTDevices.Any(d => d.Id == l.IoTDeviceId && d.StationId == request.StationId
-                        && d.ConnectivityStatus == "ONLINE" && d.LastSeenAt >= DateTime.UtcNow.AddSeconds(-60)))
+            assignedLocker = await LockerAvailability.ReadyLockers(_context, request.StationId, DateTime.UtcNow)
+                .Where(l => l.Size == booking.Size)
                 .OrderBy(l => l.LockerCode).FirstOrDefaultAsync();
 
             if (assignedLocker == null)
@@ -328,7 +323,7 @@ public class KioskService : IKioskService
             return ApiResponse<KioskStationStatusResponse>.ErrorResponse("Không tìm thấy trạm.");
 
         var devices = await _context.IoTDevices.Where(d => d.StationId == stationId)
-            .Select(d => new { d.ConnectivityStatus, d.LastSeenAt }).ToListAsync();
+            .Select(d => new { d.Id, d.ConnectivityStatus, d.LastSeenAt }).ToListAsync();
         var cutoff = DateTime.UtcNow.AddSeconds(-60);
         var onlineCount = devices.Count(d => d.ConnectivityStatus == "ONLINE" && d.LastSeenAt >= cutoff);
         var connectivity = devices.Count == 0 || onlineCount == 0 ? "OFFLINE"
@@ -340,14 +335,16 @@ public class KioskService : IKioskService
             StationName = station.Name,
             StationAddress = station.Address,
             ConnectivityStatus = connectivity,
-            Lockers = station.Lockers.Select(l => new KioskLockerItemDto
+            Lockers = station.Lockers.Where(l => devices.Any(d => d.Id == l.IoTDeviceId)).Select(l => new KioskLockerItemDto
             {
                 LockerId = l.Id,
                 LockerCode = l.LockerCode,
                 Size = l.Size.ToString(),
                 BusinessStatus = l.BusinessStatus.ToString(),
                 HealthStatus = l.HealthStatus.ToString(),
-                DoorState = l.DoorState
+                DoorState = l.DoorState,
+                LastDoorEventAt = l.LastDoorEventAt,
+                ConnectivityStatus = devices.Any(d => d.Id == l.IoTDeviceId && d.ConnectivityStatus == "ONLINE" && d.LastSeenAt >= cutoff) ? "ONLINE" : "OFFLINE"
             }).OrderBy(l => l.LockerCode).ToList()
         };
 

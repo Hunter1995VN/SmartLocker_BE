@@ -35,4 +35,27 @@ public class StationDto
     public short RefundCutoffHours { get; set; } = 2;
     public decimal RefundRateEarly { get; set; } = 1.00m;
     public decimal RefundRateLate { get; set; } = 0.50m;
+    public List<StationSizePricingDto> SizePricing { get; set; } = [];
+    public List<StationLockerDto> Lockers { get; set; } = [];
+}
+
+public class StationSizePricingDto
+{
+    public string Size { get; set; } = "";
+    public decimal PricePerBlock { get; set; }
+    public short BlockHours { get; set; }
+    public short MinHours { get; set; }
+    public short MaxHours { get; set; }
+}
+
+public class StationLockerDto
+{
+    public Guid LockerId { get; set; }
+    public string LockerCode { get; set; } = "";
+    public string Size { get; set; } = "";
+    public string BusinessStatus { get; set; } = "";
+    public string HealthStatus { get; set; } = "";
+    public string DoorState { get; set; } = "UNKNOWN";
+    public string ConnectivityStatus { get; set; } = "OFFLINE";
+    public DateTime? LastDoorEventAt { get; set; }
 }

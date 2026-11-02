@@ -97,7 +97,7 @@ public class PricingService : IPricingService
     public async Task<PricingPolicy?> GetActivePolicyAsync(Guid stationId, LockerSize size)
     {
         return await _context.PricingPolicies
-            .Where(p => p.StationId == stationId && p.Size == size && p.EffectiveTo == null)
+            .Where(p => p.StationId == stationId && p.Size == size && p.EffectiveFrom <= DateTime.UtcNow && (p.EffectiveTo == null || p.EffectiveTo > DateTime.UtcNow))
             .OrderByDescending(p => p.EffectiveFrom)
             .FirstOrDefaultAsync();
     }

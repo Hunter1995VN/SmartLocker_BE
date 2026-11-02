@@ -110,6 +110,8 @@ public class KioskLockerItemDto
     public string BusinessStatus { get; set; } = string.Empty;
     public string HealthStatus { get; set; } = string.Empty;
     public string DoorState { get; set; } = "UNKNOWN";
+    public string ConnectivityStatus { get; set; } = "OFFLINE";
+    public DateTime? LastDoorEventAt { get; set; }
 }
 
 public class KioskStationStatusResponse

@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "SmartLocker_ESP32_SingleFile/LockerRouting.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <esp_system.h>
@@ -90,19 +91,7 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
     char lockerId[40] = {0};
     extractJsonField(buf, "lockerId", lockerId, sizeof(lockerId));
 
-    int targetIndex = -1;
-    if (strcasecmp(code, "S") == 0 || strstr(code, "-S") != nullptr || strstr(code, "SIM-MQTT-01") != nullptr) targetIndex = 0;
-    else if (strcasecmp(code, "M") == 0 || strstr(code, "-M") != nullptr) targetIndex = 1;
-    else if (strcasecmp(code, "L") == 0 || strstr(code, "-L") != nullptr) targetIndex = 2;
-    else {
-      // Check by GUID
-      for (int i = 0; i < 3; i++) {
-        if (strcasecmp(lockerId, LOCKER_IDS[i]) == 0) {
-          targetIndex = i;
-          break;
-        }
-      }
-    }
+    const int targetIndex = resolveLockerIndex(lockerId, LOCKER_IDS);
 
     if (targetIndex >= 0 && targetIndex < 3) {
       Serial.printf(">>> EXECUTING REMOTE UNLOCK FOR LOCKER %s (index %d) <<<\n", LOCKER_CODES[targetIndex], targetIndex);

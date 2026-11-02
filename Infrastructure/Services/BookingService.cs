@@ -47,7 +47,7 @@ public class BookingService : IBookingService
     public async Task<ApiResponse<CreateBookingResponse>> CreateBookingAsync(Guid userId, CreateBookingRequest request)
     {
         // Validate size
-        if (!Enum.TryParse<LockerSize>(request.Size, true, out var lockerSize))
+        if (!Enum.TryParse<LockerSize>(request.Size, true, out var lockerSize) || !Enum.IsDefined(lockerSize))
             return ApiResponse<CreateBookingResponse>.ErrorResponse("Kích thước không hợp lệ. Chọn S, M, hoặc L.");
 
         if (request.StartAt >= request.EndAt)
@@ -76,6 +76,8 @@ public class BookingService : IBookingService
         var policy = await _pricingService.GetActivePolicyAsync(request.StationId, lockerSize);
         if (policy == null)
             return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá phù hợp.");
+        if (policy.BlockHours <= 0 || policy.PricePerBlock < 0)
+            return ApiResponse<CreateBookingResponse>.ErrorResponse("Chính sách giá chưa được cấu hình hợp lệ.");
 
         if (durationHours < policy.MinHours || durationHours > policy.MaxHours)
             return ApiResponse<CreateBookingResponse>.ErrorResponse($"Thời gian đặt phải từ {policy.MinHours} đến {policy.MaxHours} giờ.");
@@ -84,23 +86,23 @@ public class BookingService : IBookingService
         var strategy = _context.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 // Count bookable lockers
-                var totalLockers = await _context.Lockers
-                    .Where(l => l.StationId == request.StationId && l.Size == lockerSize &&
-                                l.BusinessStatus == LockerBusinessStatus.AVAILABLE &&
-                                l.HealthStatus == LockerHealthStatus.HEALTHY)
+                var now = DateTime.UtcNow;
+                var totalLockers = await LockerAvailability.ReadyLockers(_context, request.StationId, now)
+                    .Where(l => l.Size == lockerSize)
                     .CountAsync();
 
                 // Count overlapping active bookings with lock
                 var activeCount = await _context.Bookings
                     .FromSqlRaw(@"SELECT * FROM Bookings WITH (UPDLOCK, HOLDLOCK) 
                                   WHERE StationId = {0} AND Size = {1} 
-                                  AND Status IN ('PENDING_PAYMENT', 'CONFIRMED', 'STORED') 
+                                  AND LockerId IS NULL
+                                  AND (Status = 'CONFIRMED' OR (Status = 'PENDING_PAYMENT' AND PaymentExpiresAt > {4}))
                                   AND StartAt < {2} AND EndAt > {3}",
-                                  request.StationId, lockerSize.ToString(), request.EndAt, request.StartAt)
+                                  request.StationId, lockerSize.ToString(), request.EndAt, request.StartAt, now)
                     .CountAsync();
 
                 if (totalLockers - activeCount <= 0)

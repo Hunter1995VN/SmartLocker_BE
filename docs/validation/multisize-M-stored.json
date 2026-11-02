@@ -1,0 +1,21 @@
+{
+  "mode": "Actual SQL read only; no lifecycle or sensor writes",
+  "Status": "STORED",
+  "CheckedInAt": "2026-11-02T14:21:06.873",
+  "StartAt": "2026-11-02T14:21:06.873",
+  "EndAt": "2026-11-02T15:21:06.873",
+  "CheckedOutAt": null,
+  "LockerCode": "BT-M-01",
+  "BusinessStatus": "OCCUPIED",
+  "DoorState": "CLOSED",
+  "LastDoorEventAt": "2026-11-02T14:21:42.385",
+  "ProtectedPin": 1,
+  "IsActive": true,
+  "RevokedAt": null,
+  "PaymentStatus": "PAID",
+  "Amount": 25000.0,
+  "PaidAt": "2026-11-02T14:17:04.2940093",
+  "ConnectivityStatus": "ONLINE",
+  "LastSeenAt": "2026-11-02T14:21:59.439801",
+  "CheckedUtc": "2026-11-02T14:22:21.3703988"
+}
