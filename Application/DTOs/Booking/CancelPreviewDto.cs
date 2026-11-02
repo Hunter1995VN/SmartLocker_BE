@@ -4,10 +4,10 @@ public class CancelPreviewDto
 {
     public Guid BookingId { get; set; }
     public string BookingCode { get; set; } = string.Empty;
+    public string StationName { get; set; } = string.Empty;
+    public DateTime StartAt { get; set; }
     public string Status { get; set; } = string.Empty;
-    public string? StationName { get; set; }
-    public DateTime? StartAt { get; set; }
-    public bool CanCancel { get; set; } = true;
+    public bool CanCancel { get; set; }
     public decimal PaidAmount { get; set; }
     public decimal RefundRate { get; set; }
     public decimal RefundAmount { get; set; }
