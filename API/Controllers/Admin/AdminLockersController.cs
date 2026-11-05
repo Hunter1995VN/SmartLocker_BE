@@ -32,6 +32,10 @@ public class AdminLockersController : ControllerBase
     /// <summary>
     /// GET /api/admin/lockers/station/{stationId}/grid — Sơ đồ ô tủ theo trạm (Locker Grid)
     /// </summary>
+    [HttpGet("station/{stationId:guid}/reservations")]
+    public async Task<IActionResult> GetReservations(Guid stationId) =>
+        Ok(await _stationLockerService.GetStationReservationsAsync(stationId));
+
     [HttpGet("station/{stationId:guid}/grid")]
     public async Task<IActionResult> GetStationLockersGrid(Guid stationId)
     {
