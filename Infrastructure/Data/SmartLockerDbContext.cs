@@ -11,6 +11,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     {
     }
 
+    public DbSet<WalkInSession> WalkInSessions => Set<WalkInSession>();
     public DbSet<LostItemReport> LostItemReports => Set<LostItemReport>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<StationReview> StationReviews => Set<StationReview>();
