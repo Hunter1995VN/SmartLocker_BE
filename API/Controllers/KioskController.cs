@@ -19,7 +19,6 @@ public class KioskController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
     [HttpPost("operation-status")]
-    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("kiosk-read")]
     public async Task<IActionResult> OperationStatus(KioskOperationStatusRequest request)
     {
         var result = await _kioskService.GetOperationStatusAsync(request);
@@ -90,6 +89,7 @@ public class KioskController : ControllerBase
     /// POST /api/kiosk/manual-confirm: Khách xác nhận thủ công kèm ảnh chụp khi cảm biến cửa bị lỗi (UC-C27)
     /// </summary>
     [HttpPost("manual-confirm")]
+    [RequestSizeLimit(3_000_000)]
     public async Task<IActionResult> ManualConfirm([FromBody] KioskManualConfirmRequest request)
     {
         var result = await _kioskService.ManualConfirmAsync(request);
@@ -103,8 +103,6 @@ public class KioskController : ControllerBase
     /// GET /api/kiosk/station/{stationId:guid}/status: Lấy danh sách ô tủ & trạng thái của trạm phục vụ màn hình Kiosk
     /// </summary>
     [HttpGet("station/{stationId:guid}/status")]
-    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("kiosk-read")]
-    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetStationStatus(Guid stationId)
     {
         var result = await _kioskService.GetStationStatusAsync(stationId);

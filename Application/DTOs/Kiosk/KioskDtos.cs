@@ -98,6 +98,7 @@ public class KioskFeePaymentRequest : KioskCheckOutRequest
 
 public class KioskManualConfirmRequest
 {
+    public string? SessionToken { get; set; }
     public Guid StationId { get; set; }
     public Guid BookingId { get; set; }
     public Guid LockerId { get; set; }
