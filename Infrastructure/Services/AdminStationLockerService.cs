@@ -12,10 +12,13 @@ public class AdminStationLockerService : IAdminStationLockerService
     private readonly ISmartLockerDbContext _db;
     private readonly IAuditLogService _auditLog;
 
-    public AdminStationLockerService(ISmartLockerDbContext db, IAuditLogService auditLog)
+    private readonly ILockerNotificationService? _notifications;
+
+    public AdminStationLockerService(ISmartLockerDbContext db, IAuditLogService auditLog, ILockerNotificationService? notifications = null)
     {
         _db = db;
         _auditLog = auditLog;
+        _notifications = notifications;
     }
 
     public async Task<ApiResponse<List<StationAdminDetailDto>>> GetStationsAsync(string? search)
@@ -292,6 +295,9 @@ public class AdminStationLockerService : IAdminStationLockerService
         return ApiResponse<bool>.SuccessResponse(true, "Cập nhật biểu giá, phí phạt quá hạn và tỷ lệ hoàn hủy thành công");
     }
 
+    public Task<List<Application.DTOs.Kiosk.KioskSizeReservationDto>> GetStationReservationsAsync(Guid stationId) =>
+        StationReservationCounts.ReadAsync(_db, stationId);
+
     public async Task<ApiResponse<List<LockerGridItemDto>>> GetStationLockersGridAsync(Guid stationId)
     {
         var lockers = await _db.Lockers.AsNoTracking()
@@ -305,9 +311,12 @@ public class AdminStationLockerService : IAdminStationLockerService
             .Where(b => b.StationId == stationId && activeStatuses.Contains(b.Status))
             .ToListAsync();
 
+        var now = DateTime.UtcNow;
+        var devices = await _db.IoTDevices.AsNoTracking().Where(d => d.StationId == stationId).ToDictionaryAsync(d => d.Id);
         var grid = lockers.Select(l =>
         {
             var booking = activeBookings.FirstOrDefault(b => b.LockerId == l.Id);
+            var device = l.IoTDeviceId.HasValue ? devices.GetValueOrDefault(l.IoTDeviceId.Value) : null;
             ActiveBookingBriefDto? bookingBrief = null;
             if (booking != null)
             {
@@ -334,6 +343,13 @@ public class AdminStationLockerService : IAdminStationLockerService
                 HealthStatus = l.HealthStatus.ToString(),
                 DoorState = l.DoorState,
                 LastDoorEventAt = l.LastDoorEventAt,
+                IoTDeviceId = l.IoTDeviceId,
+                DeviceCode = device?.DeviceCode,
+                FirmwareVersion = device?.FirmwareVersion,
+                LastSeenAt = device?.LastSeenAt,
+                ConnectivityStatus = device == null ? "UNMAPPED" :
+                    device.LastSeenAt == null || device.LastSeenAt < now.AddSeconds(-60) || device.LastSeenAt > now.AddSeconds(10)
+                        ? "OFFLINE" : device.ConnectivityStatus,
                 Notes = l.Notes,
                 CurrentBooking = bookingBrief
             };
@@ -342,12 +358,41 @@ public class AdminStationLockerService : IAdminStationLockerService
         return ApiResponse<List<LockerGridItemDto>>.SuccessResponse(grid);
     }
 
-    public async Task<ApiResponse<bool>> UpdateLockerStatusAsync(Guid lockerId, UpdateLockerStatusRequest request, Guid adminUserId)
+    public Task<ApiResponse<bool>> UpdateLockerStatusAsync(Guid lockerId, UpdateLockerStatusRequest request, Guid adminUserId) =>
+        _db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            if (_db.Database.IsRelational() && _db is DbContext tracked) tracked.ChangeTracker.Clear();
+            await using var transaction = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
+            var result = await UpdateLockerStatusCoreAsync(lockerId, request, adminUserId);
+            if (result.Success && transaction != null) await transaction.CommitAsync();
+            if (result.Success && _notifications != null)
+            {
+                // Delivery cannot roll back the committed operation; polling recovers a dropped event.
+                try { var stationId = await _db.Lockers.Where(l => l.Id == lockerId).Select(l => l.StationId).SingleAsync();
+                    await _notifications.NotifyLockerStatusChangedAsync(stationId, lockerId); } catch { }
+            }
+            return result;
+        });
+
+    private async Task<ApiResponse<bool>> UpdateLockerStatusCoreAsync(Guid lockerId, UpdateLockerStatusRequest request, Guid adminUserId)
     {
         var locker = await _db.Lockers.FirstOrDefaultAsync(l => l.Id == lockerId);
         if (locker == null)
             return ApiResponse<bool>.ErrorResponse("Không tìm thấy ô tủ");
 
+        if (!Enum.IsDefined(request.BusinessStatus) || !Enum.IsDefined(request.HealthStatus))
+            return ApiResponse<bool>.ErrorResponse("Trạng thái không hợp lệ");
+        if (request.BusinessStatus is LockerBusinessStatus.RESERVED or LockerBusinessStatus.OCCUPIED)
+            return ApiResponse<bool>.ErrorResponse("Trạng thái giữ chỗ/lưu đồ chỉ được cập nhật theo luồng đơn hàng");
+        if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5)
+            return ApiResponse<bool>.ErrorResponse("Cần lý do tối thiểu 5 ký tự");
+        if (await _db.Bookings.AnyAsync(b => b.LockerId == lockerId &&
+            (b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED || b.Status == BookingStatus.PENDING_PAYMENT)))
+            return ApiResponse<bool>.ErrorResponse("Ô tủ đang có đơn hoạt động; xử lý qua luồng sự cố của đơn");
+        if (request.BusinessStatus == LockerBusinessStatus.AVAILABLE &&
+            (request.HealthStatus != LockerHealthStatus.HEALTHY || locker.DoorState != "CLOSED"))
+            return ApiResponse<bool>.ErrorResponse("Chỉ đưa tủ khỏe và đã đóng cửa về khả dụng");
         var oldStatus = locker.BusinessStatus;
         locker.BusinessStatus = request.BusinessStatus;
         locker.HealthStatus = request.HealthStatus;

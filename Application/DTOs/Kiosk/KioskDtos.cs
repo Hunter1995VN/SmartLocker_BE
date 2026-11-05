@@ -70,6 +70,9 @@ public class KioskOverduePaymentRequest
     public Guid? BookingId { get; set; }
     public string? BookingCode { get; set; }
     public Guid? StationId { get; set; }
+    public string CredentialType { get; set; } = "QR";
+    public string Payload { get; set; } = string.Empty;
+    public string? SessionToken { get; set; }
 }
 
 public class KioskOverduePaymentResponse
@@ -95,6 +98,7 @@ public class KioskFeePaymentRequest : KioskCheckOutRequest
 
 public class KioskManualConfirmRequest
 {
+    public string? SessionToken { get; set; }
     public Guid StationId { get; set; }
     public Guid BookingId { get; set; }
     public Guid LockerId { get; set; }
@@ -110,10 +114,22 @@ public class KioskLockerItemDto
     public string BusinessStatus { get; set; } = string.Empty;
     public string HealthStatus { get; set; } = string.Empty;
     public string DoorState { get; set; } = "UNKNOWN";
+    public string ConnectivityStatus { get; set; } = "OFFLINE";
+    public DateTime? LastDoorEventAt { get; set; }
+}
+
+public class KioskSizeReservationDto
+{
+    public string Size { get; set; } = "";
+    public int PendingPayment { get; set; }
+    public int AwaitingDeposit { get; set; }
+    public int UnassignedReservations { get; set; }
+    public int Stored { get; set; }
 }
 
 public class KioskStationStatusResponse
 {
+    public List<KioskSizeReservationDto> Reservations { get; set; } = new();
     public Guid StationId { get; set; }
     public string StationName { get; set; } = string.Empty;
     public string StationAddress { get; set; } = string.Empty;

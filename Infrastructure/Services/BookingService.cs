@@ -47,7 +47,7 @@ public class BookingService : IBookingService
     public async Task<ApiResponse<CreateBookingResponse>> CreateBookingAsync(Guid userId, CreateBookingRequest request)
     {
         // Validate size
-        if (!Enum.TryParse<LockerSize>(request.Size, true, out var lockerSize))
+        if (!Enum.TryParse<LockerSize>(request.Size, true, out var lockerSize) || !Enum.IsDefined(lockerSize))
             return ApiResponse<CreateBookingResponse>.ErrorResponse("Kích thước không hợp lệ. Chọn S, M, hoặc L.");
 
         if (request.StartAt >= request.EndAt)
@@ -76,6 +76,8 @@ public class BookingService : IBookingService
         var policy = await _pricingService.GetActivePolicyAsync(request.StationId, lockerSize);
         if (policy == null)
             return ApiResponse<CreateBookingResponse>.ErrorResponse("Không có chính sách giá phù hợp.");
+        if (policy.BlockHours <= 0 || policy.PricePerBlock < 0)
+            return ApiResponse<CreateBookingResponse>.ErrorResponse("Chính sách giá chưa được cấu hình hợp lệ.");
 
         if (durationHours < policy.MinHours || durationHours > policy.MaxHours)
             return ApiResponse<CreateBookingResponse>.ErrorResponse($"Thời gian đặt phải từ {policy.MinHours} đến {policy.MaxHours} giờ.");
@@ -84,23 +86,23 @@ public class BookingService : IBookingService
         var strategy = _context.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 // Count bookable lockers
-                var totalLockers = await _context.Lockers
-                    .Where(l => l.StationId == request.StationId && l.Size == lockerSize &&
-                                l.BusinessStatus == LockerBusinessStatus.AVAILABLE &&
-                                l.HealthStatus == LockerHealthStatus.HEALTHY)
+                var now = DateTime.UtcNow;
+                var totalLockers = await LockerAvailability.ReadyLockers(_context, request.StationId, now)
+                    .Where(l => l.Size == lockerSize)
                     .CountAsync();
 
                 // Count overlapping active bookings with lock
                 var activeCount = await _context.Bookings
                     .FromSqlRaw(@"SELECT * FROM Bookings WITH (UPDLOCK, HOLDLOCK) 
                                   WHERE StationId = {0} AND Size = {1} 
-                                  AND Status IN ('PENDING_PAYMENT', 'CONFIRMED', 'STORED') 
+                                  AND LockerId IS NULL
+                                  AND (Status = 'CONFIRMED' OR (Status = 'PENDING_PAYMENT' AND PaymentExpiresAt > {4}))
                                   AND StartAt < {2} AND EndAt > {3}",
-                                  request.StationId, lockerSize.ToString(), request.EndAt, request.StartAt)
+                                  request.StationId, lockerSize.ToString(), request.EndAt, request.StartAt, now)
                     .CountAsync();
 
                 if (totalLockers - activeCount <= 0)
@@ -447,7 +449,7 @@ public class BookingService : IBookingService
         var wasPendingPayment = booking.Status == BookingStatus.PENDING_PAYMENT;
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var paidAmount = basePayment?.Amount ?? booking.BaseAmount;
+        var paidAmount = basePayment?.Amount ?? 0m;
 
         var now = DateTime.UtcNow;
         var todayStart = now.Date;
@@ -529,7 +531,7 @@ public class BookingService : IBookingService
 
         var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
         var basePayment = booking.Payments.FirstOrDefault(p => p.Kind == PaymentKind.BASE && p.Status == PaymentStatus.PAID);
-        var paidAmount = basePayment?.Amount ?? booking.BaseAmount;
+        var paidAmount = basePayment?.Amount ?? 0m;
 
         var now = DateTime.UtcNow;
         var todayStart = now.Date;
@@ -581,51 +583,22 @@ public class BookingService : IBookingService
             BookingCode = booking.BookingCode,
             StationName = booking.Station?.Name ?? "Trạm tủ",
             StartAt = booking.StartAt,
+            Status = booking.Status.ToString(),
+            CanCancel = booking.Status is BookingStatus.PENDING_PAYMENT or BookingStatus.CONFIRMED,
             PaidAmount = paidAmount,
             RefundRate = refundRate,
             RefundAmount = refundAmount,
             PolicyTier = policyTier,
             PolicyDescription = policyDesc,
-            DailyCancelledCountToday = dailyCancelledCount,
+            DailyCancellationCount = dailyCancelledCount,
             IsDailyLimitExceeded = dailyCancelledCount >= 2
         };
 
         return ApiResponse<CancelPreviewDto>.SuccessResponse(preview);
     }
 
-    public async Task<ApiResponse<BookingDto>> SimulateOverdueAsync(Guid userId, Guid bookingId, int hoursOverdue = 2)
-    {
-        var booking = await _context.Bookings
-            .Include(b => b.Station)
-            .Include(b => b.Locker)
-            .Include(b => b.PricingPolicy)
-            .Include(b => b.Payments)
-            .Include(b => b.AccessCredential)
-            .FirstOrDefaultAsync(b => b.Id == bookingId);
-
-        if (booking == null)
-            return ApiResponse<BookingDto>.ErrorResponse("Không tìm thấy thông tin đặt tủ.");
-
-        if (booking.UserId != userId)
-            return ApiResponse<BookingDto>.ErrorResponse("Bạn không có quyền can thiệp đơn này.");
-
-        var now = DateTime.UtcNow;
-        if (booking.Status != BookingStatus.STORED && booking.Status != BookingStatus.CONFIRMED)
-            return ApiResponse<BookingDto>.ErrorResponse("Chỉ có thể mô phỏng quá hạn cho đơn đang lưu trữ (STORED) hoặc đã xác nhận (CONFIRMED).");
-
-        var graceMinutes = booking.PricingPolicy?.GracePeriodMinutes ?? 15;
-        booking.CheckedInAt = now.AddHours(-(hoursOverdue + 2));
-        booking.StartAt = booking.CheckedInAt.Value;
-        booking.EndAt = now.AddHours(-hoursOverdue).AddMinutes(-(graceMinutes + 5));
-        booking.IsOverdue = true;
-        booking.OverdueSince = booking.EndAt.AddMinutes(graceMinutes);
-        booking.UpdatedAt = now;
-
-        await _context.SaveChangesAsync();
-        return await GetBookingByIdAsync(userId, bookingId);
-    }
-
-
+    public Task<ApiResponse<BookingDto>> SimulateOverdueAsync(Guid userId, Guid bookingId, int hoursOverdue = 2) =>
+        Task.FromResult(ApiResponse<BookingDto>.ErrorResponse("Không hỗ trợ thay đổi thời gian giả trên đơn thật. Phụ phí được tính từ thời gian sử dụng và thanh toán đã xác minh."));
     /// <summary>
     /// UC-T09: Thanh toán phụ phí quá hạn
     /// Bảo vệ chống concurrency double-click (TC_BKO_20) bằng SemaphoreSlim lock & Idempotency check.

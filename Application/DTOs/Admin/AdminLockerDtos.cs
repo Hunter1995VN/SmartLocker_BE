@@ -13,6 +13,11 @@ public class LockerGridItemDto
     public string HealthStatus { get; set; } = string.Empty; // HEALTHY, WARNING, CRITICAL
     public string DoorState { get; set; } = "UNKNOWN"; // OPEN, CLOSED, UNKNOWN
     public DateTime? LastDoorEventAt { get; set; }
+    public Guid? IoTDeviceId { get; set; }
+    public string ConnectivityStatus { get; set; } = "UNMAPPED";
+    public DateTime? LastSeenAt { get; set; }
+    public string? DeviceCode { get; set; }
+    public string? FirmwareVersion { get; set; }
     public string? Notes { get; set; }
     public ActiveBookingBriefDto? CurrentBooking { get; set; }
 }

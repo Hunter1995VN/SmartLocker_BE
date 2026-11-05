@@ -6,6 +6,9 @@
 # dotenv files
 mqtt-local.passwords
 iotDevice/iot_config.h
+**/iot_config.h
+API/App_Data/
+**/node_modules/
 .env
 appsettings.Development.json
 appsettings.Production.json

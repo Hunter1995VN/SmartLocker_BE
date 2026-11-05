@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 [Route("api/kiosk")]
 public class KioskController : ControllerBase
 {
+    [HttpPost("pay-overdue")]
     [HttpPost("pay-fee")]
     [HttpPost("pay-overdue-fee")]
     public async Task<IActionResult> PayOverdue(KioskFeePaymentRequest request)
@@ -18,6 +19,7 @@ public class KioskController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
     [HttpPost("operation-status")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("kiosk-read")]
     public async Task<IActionResult> OperationStatus(KioskOperationStatusRequest request)
     {
         var result = await _kioskService.GetOperationStatusAsync(request);
@@ -59,9 +61,9 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/kiosk/pay-overdue: Tạo mã VietQR PayOS thanh toán phụ phí quá hạn trực tiếp trên Kiosk (UC-T19)
+    /// POST /api/kiosk/overdue/payment: Tạo yêu cầu phụ phí từ màn hình tra cứu Kiosk (UC-T19)
     /// </summary>
-    [HttpPost("pay-overdue")]
+    [HttpPost("overdue/payment")]
     public async Task<IActionResult> CreateOverduePayment([FromBody] KioskOverduePaymentRequest request)
     {
         var result = await _kioskService.CreateOverduePaymentAsync(request);
@@ -72,7 +74,7 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/kiosk/confirm-overdue-payment: Xác nhận thanh toán phụ phí quá hạn tại Kiosk (hỗ trợ demo/test nhanh UC-T19)
+    /// Legacy demo route: never confirms payment without real gateway verification.
     /// </summary>
     [HttpPost("confirm-overdue-payment")]
     public async Task<IActionResult> ConfirmOverduePayment([FromBody] KioskOverduePaymentRequest request)
@@ -88,6 +90,7 @@ public class KioskController : ControllerBase
     /// POST /api/kiosk/manual-confirm: Khách xác nhận thủ công kèm ảnh chụp khi cảm biến cửa bị lỗi (UC-C27)
     /// </summary>
     [HttpPost("manual-confirm")]
+    [RequestSizeLimit(3_000_000)]
     public async Task<IActionResult> ManualConfirm([FromBody] KioskManualConfirmRequest request)
     {
         var result = await _kioskService.ManualConfirmAsync(request);
@@ -101,6 +104,8 @@ public class KioskController : ControllerBase
     /// GET /api/kiosk/station/{stationId:guid}/status: Lấy danh sách ô tủ & trạng thái của trạm phục vụ màn hình Kiosk
     /// </summary>
     [HttpGet("station/{stationId:guid}/status")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("kiosk-read")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetStationStatus(Guid stationId)
     {
         var result = await _kioskService.GetStationStatusAsync(stationId);

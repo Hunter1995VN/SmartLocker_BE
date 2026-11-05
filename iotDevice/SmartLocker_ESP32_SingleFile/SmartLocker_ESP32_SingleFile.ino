@@ -3,6 +3,7 @@
 //   Dành cho SmartLocker Bến Thành - Trạm SIM-MQTT-001 (3 Tủ: S, M, L)
 // ==============================================================================
 #include <Arduino.h>
+#include "LockerRouting.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <esp_system.h>
@@ -12,17 +13,7 @@
 // ------------------------------------------------------------------------------
 // 1. CẤU HÌNH WI-FI & MQTT BROKER
 // ------------------------------------------------------------------------------
-static const char WIFI_SSID[]       = "T u n a s M i n h";
-static const char WIFI_PASSWORD[]   = "khongcopass";
-static const char MQTT_HOST[]       = "172.20.10.2";
-static const unsigned short MQTT_PORT = 1883;
-static const char MQTT_USERNAME[]   = "esp32";
-static const char MQTT_PASSWORD[]   = "khongcopass";
-
-static const char DEVICE_CODE[]     = "SIM-MQTT-001";
-static const char LOCKER_S_ID[]     = "7590fdc1-6057-4764-96dc-bfe3fc7142d3";
-static const char LOCKER_M_ID[]     = "86a1edc2-7168-5875-a7ed-cfe4fc8253e4";
-static const char LOCKER_L_ID[]     = "97b2fec3-8279-6986-b8fe-dfe5fc9364f5";
+#include "iot_config.h"
 
 // ------------------------------------------------------------------------------
 // 2. CẤU HÌNH PHẦN CỨNG (3 RƠ-LE & 3 CẢM BIẾN HÀNH TRÌNH)
@@ -143,23 +134,7 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
     char lockerId[40] = {0};
     extractJsonField(buf, "lockerId", lockerId, sizeof(lockerId));
 
-    int targetIndex = -1;
-    // Khớp mã tủ: "S", "BT-S-01", "SIM-MQTT-01" -> Ngăn 0
-    if (strcasecmp(code, "S") == 0 || strstr(code, "-S") != nullptr || strstr(code, "SIM-MQTT-01") != nullptr) {
-      targetIndex = 0;
-    } else if (strcasecmp(code, "M") == 0 || strstr(code, "-M") != nullptr) {
-      targetIndex = 1;
-    } else if (strcasecmp(code, "L") == 0 || strstr(code, "-L") != nullptr) {
-      targetIndex = 2;
-    } else {
-      // Khớp theo GUID
-      for (int i = 0; i < 3; i++) {
-        if (strcasecmp(lockerId, LOCKER_IDS[i]) == 0) {
-          targetIndex = i;
-          break;
-        }
-      }
-    }
+    const int targetIndex = resolveLockerIndex(lockerId, LOCKER_IDS);
 
     if (targetIndex >= 0 && targetIndex < 3) {
       Serial.printf(">>> EXECUTING REMOTE UNLOCK FOR LOCKER %s (index %d) <<<\n", LOCKER_CODES[targetIndex], targetIndex);
