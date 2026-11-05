@@ -170,9 +170,11 @@ app.UseSwaggerUI(c =>
 });
 
 // Fix Cross-Origin-Opener-Policy để Google OAuth popup hoạt động (Quân)
+// và hỗ trợ Private Network Access từ trình duyệt trên cùng máy trạm Kiosk
 app.Use(async (context, next) =>
 {
     context.Response.Headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups";
+    context.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
     await next();
 });
 

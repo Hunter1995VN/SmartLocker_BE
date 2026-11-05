@@ -14,11 +14,37 @@ public static class OnlineTicket
 {
     public static string? GetDisplayPin(AccessCredential? credential, IAccessPinProtector? protector = null)
     {
-        var pin = !string.IsNullOrEmpty(credential?.ProtectedAccessCode)
+        if (credential == null) return null;
+        var pin = !string.IsNullOrEmpty(credential.ProtectedAccessCode)
             ? protector?.Unprotect(credential.BookingId, credential.ProtectedAccessCode)
-            : credential?.OfflinePayload;
+            : credential.OfflinePayload;
+        if (string.IsNullOrEmpty(pin) && !string.IsNullOrWhiteSpace(credential.OfflinePayload))
+        {
+            pin = TryExtractPinFromJws(credential.OfflinePayload);
+        }
         return pin is { Length: 8 } && pin.All(char.IsAsciiDigit)
-            && HashPin(pin) == credential!.AccessCodeHash ? pin : null;
+            && HashPin(pin) == credential.AccessCodeHash ? pin : null;
+    }
+
+    private static string? TryExtractPinFromJws(string offlinePayload)
+    {
+        try
+        {
+            var parts = offlinePayload.Trim().Split('.');
+            if (parts.Length != 3) return offlinePayload.Trim();
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4)
+            {
+                case 2: payload += "=="; break;
+                case 3: payload += "="; break;
+            }
+            using var doc = JsonDocument.Parse(Convert.FromBase64String(payload));
+            return doc.RootElement.TryGetProperty("pin", out var pinProp) ? pinProp.GetString() : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static string HashPin(string pin) =>
@@ -26,7 +52,7 @@ public static class OnlineTicket
 
     public static bool NeedsRotation(AccessCredential credential, Guid stationId, DateTime now)
     {
-        if (credential.QrExpiresAt <= now || credential.QrExpiresAt > now.AddSeconds(60)) return true;
+        if (credential.QrExpiresAt <= now || credential.QrExpiresAt > now.AddSeconds(120)) return true;
         try
         {
             using var json = JsonDocument.Parse(Convert.FromBase64String(credential.QrPayload));
@@ -44,7 +70,7 @@ public static class OnlineTicket
     public static void Rotate(AccessCredential credential, Guid stationId, DateTime now)
     {
         credential.QrNonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        credential.QrExpiresAt = now.AddSeconds(60);
+        credential.QrExpiresAt = now.AddSeconds(120);
         credential.QrPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
         {
             bookingId = credential.BookingId,
