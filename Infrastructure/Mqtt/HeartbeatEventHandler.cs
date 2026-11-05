@@ -47,7 +47,7 @@ public sealed class HeartbeatEventHandler(ISmartLockerDbContext db, ILockerNotif
             // This firmware identifies one physical bay per size; never choose among duplicates.
             if (group.Count() != 1 || !doors.TryGetValue(group.Key, out var state)) continue;
             var locker = group.Single();
-            if (activeLockerIds.Contains(locker.Id) || locker.BusinessStatus != LockerBusinessStatus.AVAILABLE || locker.DoorState == state) continue;
+            if (state != "CLOSED" || activeLockerIds.Contains(locker.Id) || locker.BusinessStatus != LockerBusinessStatus.AVAILABLE || locker.DoorState == state) continue;
             locker.DoorState = state;
             locker.UpdatedAt = now;
             snapshotsChanged = true;
