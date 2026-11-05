@@ -64,16 +64,24 @@ public sealed class DoorEventHandler(
             return;
         }
 
+        var activeBooking = locker.Bookings
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefault(b => b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED);
+
+        // Do not flip an idle AVAILABLE locker to OPEN on ESP32 boot/reconnect when no active check-in/out is in progress
+        if (message.DoorState == "OPEN" && activeBooking == null && locker.BusinessStatus == LockerBusinessStatus.AVAILABLE)
+        {
+            locker.LastDoorEventAt = timestamp;
+            locker.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
         var previousDoorState = locker.DoorState;
         var previousDoorAt = locker.LastDoorEventAt;
         locker.DoorState = message.DoorState;
         locker.LastDoorEventAt = timestamp;
         locker.UpdatedAt = DateTime.UtcNow;
-
-        // Auto transition active booking on door close
-        var activeBooking = locker.Bookings
-            .OrderByDescending(b => b.CreatedAt)
-            .FirstOrDefault(b => b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED);
 
         if (activeBooking != null)
         {
@@ -89,14 +97,14 @@ public sealed class DoorEventHandler(
                     }
                     else
                     {
-                    // Start the purchased duration at the actual observed opening, not booking/payment time.
-                    activeBooking.CheckedInAt = previousDoorAt!.Value;
-                    activeBooking.StartAt = previousDoorAt.Value;
-                    activeBooking.EndAt = previousDoorAt.Value.Add(duration);
-                    activeBooking.Status = BookingStatus.STORED;
-                    activeBooking.UpdatedAt = DateTime.UtcNow;
-                    locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
-                    logger.LogInformation("Booking {BookingCode} transitioned to STORED upon door close.", activeBooking.BookingCode);
+                        // Start the purchased duration at the actual observed opening, not booking/payment time.
+                        activeBooking.CheckedInAt = previousDoorAt!.Value;
+                        activeBooking.StartAt = previousDoorAt.Value;
+                        activeBooking.EndAt = previousDoorAt.Value.Add(duration);
+                        activeBooking.Status = BookingStatus.STORED;
+                        activeBooking.UpdatedAt = DateTime.UtcNow;
+                        locker.BusinessStatus = LockerBusinessStatus.OCCUPIED;
+                        logger.LogInformation("Booking {BookingCode} transitioned to STORED upon door close.", activeBooking.BookingCode);
                     }
                 }
                 else if (activeBooking.Status == BookingStatus.STORED && activeBooking.CheckedOutAt != null && previousDoorAt >= activeBooking.CheckedOutAt
