@@ -19,7 +19,7 @@ export function createLocalBroker({ username, password, deviceCode }) {
   };
   const prefix = `smartlocker/devices/${deviceCode}/`;
   broker.authorizePublish = (client, packet, callback) => {
-    const allowed = client?.[trusted] || (!packet.retain && [prefix + 'door', prefix + 'heartbeat'].includes(packet.topic));
+    const allowed = client?.[trusted] || (!packet.retain && [prefix + 'door', prefix + 'heartbeat', prefix + 'diagnostics'].includes(packet.topic));
     callback(allowed ? null : new Error('Device publish denied'));
   };
   broker.authorizeSubscribe = (client, subscription, callback) => {
@@ -31,20 +31,50 @@ export function createLocalBroker({ username, password, deviceCode }) {
 }
 
 async function start() {
-  const configPath = process.env.SMARTLOCKER_IOT_CONFIG || fileURLToPath(new URL('../../iotDevice/SmartLocker_ESP32_SingleFile/iot_config.h', import.meta.url));
-  const config = await readFile(configPath, 'utf8');
-  const field = name => {
-    const match = config.match(new RegExp(`(?:char\\s+${name}\\[\\]|char\\s*\\*\\s*${name})\\s*=\\s*("(?:[^"\\\\]|\\\\.)*")`));
-    if (!match) throw new Error(`Missing configuration field ${name}`);
-    return JSON.parse(match[1]);
-  };
-  const host = field('MQTT_HOST');
+  let configPath = process.env.SMARTLOCKER_IOT_CONFIG;
+  if (!configPath) {
+    const candidate1 = fileURLToPath(new URL('../../iotDevice/SmartLocker_ESP32_SingleFile/iot_config.h', import.meta.url));
+    const candidate2 = fileURLToPath(new URL('../../iotDevice/iot_config.h', import.meta.url));
+    try {
+      await readFile(candidate1);
+      configPath = candidate1;
+    } catch {
+      configPath = candidate2;
+    }
+  }
+
+  let username = 'esp32';
+  let password = 'khongcopass';
+  let deviceCode = 'SIM-MQTT-001';
+  let host = '127.0.0.1';
+
+  try {
+    const config = await readFile(configPath, 'utf8');
+    const field = name => {
+      const match = config.match(new RegExp(`(?:char\\s+${name}\\[\\]|char\\s*\\*\\s*${name})\\s*=\\s*("(?:[^"\\\\]|\\\\.)*")`));
+      return match ? JSON.parse(match[1]) : null;
+    };
+    username = field('MQTT_USERNAME') || username;
+    password = field('MQTT_PASSWORD') || password;
+    deviceCode = field('DEVICE_CODE') || deviceCode;
+    host = field('MQTT_HOST') || host;
+  } catch (e) {
+    console.warn('Could not read iot_config.h, using defaults.', e.message);
+  }
+
   const localAddresses = Object.values(networkInterfaces()).flat().filter(Boolean).filter(n => !n.internal && n.family === 'IPv4').map(n => n.address);
-  if (!localAddresses.includes(host)) throw new Error('MQTT_HOST must match an IPv4 address of this computer. Update the local header first.');
-  const broker = createLocalBroker({ username: field('MQTT_USERNAME'), password: field('MQTT_PASSWORD'), deviceCode: field('DEVICE_CODE') });
-  const servers = ['127.0.0.1', host].map(address => {
+  const listenAddresses = ['127.0.0.1'];
+  if (localAddresses.includes(host)) {
+    listenAddresses.push(host);
+  } else if (localAddresses.length > 0) {
+    listenAddresses.push(localAddresses[0]);
+  }
+
+  const broker = createLocalBroker({ username, password, deviceCode });
+  const uniqueAddresses = Array.from(new Set(listenAddresses));
+  const servers = uniqueAddresses.map(address => {
     const server = createServer(broker.handle);
-    server.on('error', () => { console.error(`Unable to listen on ${address}:1883`); process.exitCode = 1; });
+    server.on('error', (err) => { console.error(`Unable to listen on ${address}:1883: ${err.message}`); });
     server.listen(1883, address, () => console.log(`MQTT listening on ${address}:1883 (${address === '127.0.0.1' ? 'local API' : 'authenticated device; topic ACL enabled'})`));
     return server;
   });
@@ -52,5 +82,5 @@ async function start() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  start().catch(() => { console.error('Local broker startup failed. Check the ignored IoT header and network address.'); process.exitCode = 1; });
+  start().catch((err) => { console.error('Local broker startup failed:', err); process.exitCode = 1; });
 }

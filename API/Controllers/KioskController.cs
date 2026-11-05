@@ -61,6 +61,19 @@ public class KioskController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/kiosk/offline-checkout: UC-T13 — Lấy hành lý ở chế độ ngoại tuyến khi mất Internet
+    /// </summary>
+    [HttpPost("offline-checkout")]
+    public async Task<IActionResult> OfflineCheckOut([FromBody] KioskCheckOutRequest request)
+    {
+        var result = await _kioskService.OfflineCheckOutAsync(request);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// POST /api/kiosk/overdue/payment: Tạo yêu cầu phụ phí từ màn hình tra cứu Kiosk (UC-T19)
     /// </summary>
     [HttpPost("overdue/payment")]

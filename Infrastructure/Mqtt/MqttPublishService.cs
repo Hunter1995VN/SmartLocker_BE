@@ -88,6 +88,40 @@ public class MqttPublishService : IMqttPublishService, IAsyncDisposable
         return await PublishMessageAsync(targetTopic, json, retain: false);
     }
 
+    public async Task<bool> PublishRebootCommandAsync(string deviceCode, string? requestId = null)
+    {
+        var targetTopic = $"smartlocker/devices/{deviceCode}/cmd";
+        var payloadObj = new
+        {
+            command = "REBOOT",
+            deviceCode = deviceCode,
+            requestId = requestId ?? Guid.NewGuid().ToString("N"),
+            sentAt = DateTime.UtcNow.ToString("O")
+        };
+
+        var json = JsonSerializer.Serialize(payloadObj);
+        _logger.LogInformation("Publishing REBOOT command to {Topic}: {Payload}", targetTopic, json);
+
+        return await PublishMessageAsync(targetTopic, json, retain: false);
+    }
+
+    public async Task<bool> PublishSelfTestCommandAsync(string deviceCode, string? requestId = null)
+    {
+        var targetTopic = $"smartlocker/devices/{deviceCode}/cmd";
+        var payloadObj = new
+        {
+            command = "SELF_TEST",
+            deviceCode = deviceCode,
+            requestId = requestId ?? Guid.NewGuid().ToString("N"),
+            sentAt = DateTime.UtcNow.ToString("O")
+        };
+
+        var json = JsonSerializer.Serialize(payloadObj);
+        _logger.LogInformation("Publishing SELF_TEST command to {Topic}: {Payload}", targetTopic, json);
+
+        return await PublishMessageAsync(targetTopic, json, retain: false);
+    }
+
     public async Task<bool> PublishMessageAsync(string topic, string payload, bool retain = false)
     {
         try

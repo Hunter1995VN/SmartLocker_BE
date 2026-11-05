@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<IKioskService, KioskService>();
         services.AddScoped<Infrastructure.Mqtt.DoorEventHandler>();
         services.AddScoped<Infrastructure.Mqtt.HeartbeatEventHandler>();
+        services.AddScoped<Infrastructure.Mqtt.DiagnosticsEventHandler>();
         services.AddHostedService<Infrastructure.Mqtt.MqttSubscriberService>();
 
         // 1. Kết nối SQL Server — hỗ trợ cả DefaultConnection (Nhiệm) và Default (Quân)

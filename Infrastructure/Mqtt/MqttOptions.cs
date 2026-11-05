@@ -9,6 +9,7 @@ public sealed class MqttOptions
     public string Topic { get; set; } = "smartlocker/test";
     public string DoorEventTopic { get; set; } = "smartlocker/devices/+/door";
     public string HeartbeatTopic { get; set; } = "smartlocker/devices/+/heartbeat";
+    public string DiagnosticsTopic { get; set; } = "smartlocker/devices/+/diagnostics";
     public string? Username { get; set; }
     public string? Password { get; set; }
     public int ReconnectDelaySeconds { get; set; } = 5;

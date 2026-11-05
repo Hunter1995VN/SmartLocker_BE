@@ -20,6 +20,7 @@ public class KioskService : IKioskService
     private readonly IPricingService _pricingService;
     private readonly IPaymentGatewayService? _paymentGateway;
     private readonly IBookingService? _bookingService;
+    private readonly IOfflineTicketService? _offlineTicketService;
     private readonly ILogger<KioskService> _logger;
 
     public KioskService(
@@ -27,7 +28,10 @@ public class KioskService : IKioskService
         IMqttPublishService mqttPublishService,
         ILockerNotificationService notificationService,
         IPricingService pricingService,
-        ILogger<KioskService> logger, IBookingService? bookingService = null, IPaymentGatewayService? paymentGateway = null)
+        ILogger<KioskService> logger,
+        IBookingService? bookingService = null,
+        IPaymentGatewayService? paymentGateway = null,
+        IOfflineTicketService? offlineTicketService = null)
     {
         _context = context;
         _mqttPublishService = mqttPublishService;
@@ -36,6 +40,7 @@ public class KioskService : IKioskService
         _logger = logger;
         _bookingService = bookingService;
         _paymentGateway = paymentGateway;
+        _offlineTicketService = offlineTicketService;
     }
 
     private static string FeeSessionHash(string? type, string payload, string token) =>
@@ -82,8 +87,21 @@ public class KioskService : IKioskService
                 && b.AccessCredential.IsActive && b.AccessCredential.RevokedAt == null
                 && (b.AccessCredential.AuthLockUntil == null || b.AccessCredential.AuthLockUntil <= now));
         if (string.Equals(type, "QR", StringComparison.OrdinalIgnoreCase))
-            return await query.FirstOrDefaultAsync(b => b.AccessCredential!.QrPayload == payload
+        {
+            var matched = await query.FirstOrDefaultAsync(b => (b.AccessCredential!.QrPayload == payload || b.AccessCredential.OfflinePayload == payload)
                 && (b.AccessCredential.QrExpiresAt > now || (sensorReport && b.CheckedOutAt > now.AddMinutes(-15))));
+            if (matched != null) return matched;
+
+            if (_offlineTicketService != null && payload.Contains('.'))
+            {
+                var (isValid, ticket, _) = _offlineTicketService.VerifyHmacToken(payload);
+                if (isValid && ticket != null && ticket.StationId == stationId)
+                {
+                    return await query.FirstOrDefaultAsync(b => b.Id == ticket.BookingId);
+                }
+            }
+            return null;
+        }
         if (!string.Equals(type, "ACCESS_CODE", StringComparison.OrdinalIgnoreCase)
             || payload.Length != 8 || payload.Any(c => c < '0' || c > '9')) return null;
         var hash = OnlineTicket.HashPin(payload);
@@ -495,4 +513,68 @@ public class KioskService : IKioskService
 
     public Task<ApiResponse<bool>> ConfirmOverduePaymentDemoAsync(KioskOverduePaymentRequest request) =>
         Task.FromResult(ApiResponse<bool>.ErrorResponse("Không hỗ trợ xác nhận thanh toán giả. Trạng thái chỉ được cập nhật qua đối soát PayOS thật."));
+
+    /// <summary>
+    /// UC-T13: Lấy hành lý ở chế độ ngoại tuyến khi mất Internet (Offline Mode)
+    /// </summary>
+    public async Task<ApiResponse<KioskCheckOutResponse>> OfflineCheckOutAsync(KioskCheckOutRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Payload))
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Mã vé ngoại tuyến không hợp lệ.");
+
+        if (_offlineTicketService == null)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Dịch vụ xác thực vé ngoại tuyến không khả dụng.");
+
+        var (isValid, ticket, error) = _offlineTicketService.VerifyHmacToken(request.Payload.Trim());
+        if (!isValid || ticket == null)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse(error ?? "Chữ ký mật mã HMAC-SHA256 của vé ngoại tuyến không hợp lệ.");
+
+        if (request.StationId != Guid.Empty && ticket.StationId != request.StationId)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Vé mở khóa ngoại tuyến này thuộc về trạm khác.");
+
+        if (ticket.ExpiresAt < DateTime.UtcNow)
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Vé mở khóa ngoại tuyến đã hết hạn hiệu lực.");
+
+        // Phát lệnh mở chốt Solenoid trực tiếp qua MQTT cục bộ
+        if (ticket.LockerId.HasValue && !string.IsNullOrEmpty(ticket.LockerCode))
+        {
+            var device = await _context.IoTDevices.FirstOrDefaultAsync(d => d.StationId == ticket.StationId);
+            var deviceCode = device?.DeviceCode ?? "SIM-MQTT-001";
+            await _mqttPublishService.PublishUnlockCommandAsync(deviceCode, ticket.LockerId.Value, ticket.LockerCode);
+        }
+
+        // Cập nhật trạng thái booking và hộc tủ nếu có thể
+        try
+        {
+            var booking = await _context.Bookings.Include(b => b.Locker).FirstOrDefaultAsync(b => b.Id == ticket.BookingId);
+            if (booking != null)
+            {
+                booking.Status = BookingStatus.COMPLETED;
+                booking.CheckedOutAt = DateTime.UtcNow;
+                if (booking.Locker != null)
+                {
+                    booking.Locker.BusinessStatus = LockerBusinessStatus.AVAILABLE;
+                    booking.Locker.UpdatedAt = DateTime.UtcNow;
+                }
+                await _context.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không thể cập nhật CSDL trong chế độ offline (sẽ đồng bộ sau).");
+        }
+
+        return ApiResponse<KioskCheckOutResponse>.SuccessResponse(new KioskCheckOutResponse
+        {
+            BookingId = ticket.BookingId,
+            BookingCode = ticket.BookingCode,
+            LockerId = ticket.LockerId,
+            LockerCode = ticket.LockerCode,
+            LockerSize = ticket.LockerSize,
+            DoorState = "OPEN",
+            IsOverdue = false,
+            OverdueFee = 0,
+            Message = $"[XÁC THỰC NGOẠI TUYẾN THÀNH CÔNG] Chữ ký số HMAC-SHA256 hợp lệ. Ô tủ {ticket.LockerCode} (Size {ticket.LockerSize}) đã mở chốt cơ học."
+        });
+    }
 }

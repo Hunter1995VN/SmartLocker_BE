@@ -48,3 +48,46 @@ public class CreateMaintenanceTicketRequest
     public string Priority { get; set; } = "MEDIUM";
     public Guid? AssignedStaffId { get; set; }
 }
+
+public class SwapSpareLockerRequest
+{
+    public string Reason { get; set; } = "Kẹt chốt cơ học / Cửa không bung";
+    public bool OpenNewLocker { get; set; } = true;
+}
+
+public class SwapSpareLockerResultDto
+{
+    public Guid OldLockerId { get; set; }
+    public string OldLockerCode { get; set; } = string.Empty;
+    public Guid NewLockerId { get; set; }
+    public string NewLockerCode { get; set; } = string.Empty;
+    public string Size { get; set; } = string.Empty;
+    public Guid? BookingId { get; set; }
+    public string? BookingCode { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public DateTime SwappedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// UC-A02: Cấu hình danh mục ô tủ và ánh xạ mã chân bo mạch IoT
+/// </summary>
+public class UpdateLockerHardwareMappingRequest
+{
+    public short? GpioPin { get; set; }
+    public Guid? IoTDeviceId { get; set; }
+}
+
+/// <summary>
+/// UC-S03: Giám sát cảm biến cửa đóng/mở & Lịch sử Telemetry
+/// </summary>
+public class DoorTelemetryItemDto
+{
+    public Guid LockerId { get; set; }
+    public string LockerCode { get; set; } = string.Empty;
+    public string Size { get; set; } = string.Empty;
+    public string DoorState { get; set; } = "CLOSED";
+    public DateTime? LastDoorEventAt { get; set; }
+    public short? GpioPin { get; set; }
+    public string HealthStatus { get; set; } = "HEALTHY";
+    public string DeviceCode { get; set; } = string.Empty;
+}
