@@ -117,8 +117,18 @@ public class KioskLockerItemDto
     public DateTime? LastDoorEventAt { get; set; }
 }
 
+public class KioskSizeReservationDto
+{
+    public string Size { get; set; } = "";
+    public int PendingPayment { get; set; }
+    public int AwaitingDeposit { get; set; }
+    public int UnassignedReservations { get; set; }
+    public int Stored { get; set; }
+}
+
 public class KioskStationStatusResponse
 {
+    public List<KioskSizeReservationDto> Reservations { get; set; } = new();
     public Guid StationId { get; set; }
     public string StationName { get; set; } = string.Empty;
     public string StationAddress { get; set; } = string.Empty;

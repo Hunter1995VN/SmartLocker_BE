@@ -335,6 +335,7 @@ public class KioskService : IKioskService
         var response = new KioskStationStatusResponse
         {
             StationId = station.Id,
+            Reservations = await StationReservationCounts.ReadAsync(_context, stationId),
             StationName = station.Name,
             StationAddress = station.Address,
             ConnectivityStatus = connectivity,
