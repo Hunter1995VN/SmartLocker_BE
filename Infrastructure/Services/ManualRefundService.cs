@@ -1,4 +1,4 @@
-namespace Infrastructure.Services;
+﻿namespace Infrastructure.Services;
 
 using System.Text.Json;
 using Application.DTOs.Common;
@@ -230,9 +230,11 @@ public class ManualRefundService : IManualRefundService
             .ToList();
 
         var bookingIds = allRecords.Select(r => r.BookingId).Distinct().ToList();
-        var liveBookingStatuses = await _db.Bookings.AsNoTracking()
-            .Where(b => bookingIds.Contains(b.Id))
-            .ToDictionaryAsync(b => b.Id, b => b.Status.ToString());
+        var liveBookingStatuses = bookingIds.Count > 0
+            ? await _db.Bookings.AsNoTracking()
+                .Where(b => bookingIds.Contains(b.Id))
+                .ToDictionaryAsync(b => b.Id, b => b.Status.ToString())
+            : new Dictionary<Guid, string>();
 
         var allDtos = allRecords
             .Select(r => MapToDto(r, liveBookingStatuses.TryGetValue(r.BookingId, out var st) ? st : null))
@@ -341,10 +343,12 @@ public class ManualRefundService : IManualRefundService
             .Distinct()
             .ToList();
 
-        var openIncidents = await _db.SecurityIncidents.AsNoTracking()
-            .Where(i => stationIds.Contains(i.StationId) && i.Status != IncidentStatus.RESOLVED)
-            .OrderByDescending(i => i.CreatedAt)
-            .ToListAsync();
+        var openIncidents = stationIds.Count > 0
+            ? await _db.SecurityIncidents.AsNoTracking()
+                .Where(i => stationIds.Contains(i.StationId) && i.Status != IncidentStatus.RESOLVED)
+                .OrderByDescending(i => i.CreatedAt)
+                .ToListAsync()
+            : new List<SecurityIncident>();
 
         var candidates = new List<RefundablePaymentCandidateDto>();
 
