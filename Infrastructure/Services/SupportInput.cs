@@ -2,6 +2,14 @@ namespace Infrastructure.Services;
 
 public static class SupportInput
 {
+    public static bool IsContact(string? contact)
+    {
+        if (string.IsNullOrWhiteSpace(contact) || contact.Length > 255) return false;
+        var value = contact.Trim();
+        if (value.Contains('@')) return System.Net.Mail.MailAddress.TryCreate(value, out var mail) && mail.Address == value;
+        var digits = value.Count(c => c >= '0' && c <= '9');
+        return value.Length <= 30 && digits is >= 8 and <= 15 && value.All(c => char.IsAsciiDigit(c) || "+(). -".Contains(c));
+    }
     public static bool IsJpeg(string? data, int maxBytes)
     {
         const string prefix = "data:image/jpeg;base64,";
