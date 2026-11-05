@@ -71,5 +71,20 @@ public sealed class LockerGridTests : IDisposable
         unassigned.Status = BookingStatus.COMPLETED; await db.SaveChangesAsync();
         Assert.Equal(0, (await Service.GetStationReservationsAsync(station.Id)).Single(x => x.Size == "M").Stored);
     }
+    [Fact] public async Task HeartbeatResynchronizesOnlyAnUnambiguousIdleBayWithoutCreatingDoorTransitionEvidence() {
+        var idle = Add(LockerSize.M); idle.DoorState="OPEN"; idle.LastDoorEventAt=DateTime.UtcNow.AddDays(-2);
+        var busy = Add(LockerSize.S,LockerBusinessStatus.OCCUPIED);busy.DoorState="OPEN";
+        var duplicate1=Add(LockerSize.L);var duplicate2=Add(LockerSize.L);duplicate1.DoorState=duplicate2.DoorState="OPEN";
+        var device=new IoTDevice{Id=Guid.NewGuid(),StationId=station.Id,DeviceCode="UNIT-SNAPSHOT",LastSeenAt=DateTime.UtcNow};
+        foreach(var l in new[]{idle,busy,duplicate1,duplicate2})l.IoTDeviceId=device.Id;
+        var order=new Booking{Id=Guid.NewGuid(),StationId=station.Id,LockerId=busy.Id,Status=BookingStatus.STORED,CheckedOutAt=DateTime.UtcNow.AddSeconds(-10)};
+        db.AddRange(device,order);await db.SaveChangesAsync();var lastRealAt=idle.LastDoorEventAt;
+        await new Infrastructure.Mqtt.HeartbeatEventHandler(db,notifications.Object).HandleAsync("smartlocker/devices/UNIT-SNAPSHOT/heartbeat",
+            "{\"deviceCode\":\"UNIT-SNAPSHOT\",\"status\":\"ONLINE\",\"uptime\":120,\"rssi\":-55,\"doorS\":\"CLOSED\",\"doorM\":\"CLOSED\",\"doorL\":\"CLOSED\"}",false,default);
+        Assert.Equal("CLOSED",idle.DoorState);Assert.Equal(lastRealAt,idle.LastDoorEventAt);
+        Assert.Equal("OPEN",busy.DoorState);Assert.Equal(BookingStatus.STORED,order.Status);
+        Assert.Equal("OPEN",duplicate1.DoorState);Assert.Equal("OPEN",duplicate2.DoorState);
+        notifications.Verify(n=>n.NotifyStationStatusChangedAsync(station.Id,"ONLINE",It.IsAny<DateTimeOffset>()),Times.Once);
+    }
     public void Dispose() => db.Dispose();
 }

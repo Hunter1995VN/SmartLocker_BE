@@ -1,0 +1,154 @@
+{
+  "scope": "UC-S02 only; actual API, shared SQL, PayOS and ESP32, no mocked responses or door events",
+  "paidAmountVnd": 15000,
+  "paidUiTransitions": [
+    {
+      "observedAtUtc": "2026-11-05T02:29:07.291Z",
+      "adminCard": "SIM-MQTT-01\nTrống\nCửa: CLOSED · ONLINE",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 1\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 1\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:29:23.671Z",
+      "adminCard": "SIM-MQTT-01\nTrống\nCửa: CLOSED · ONLINE",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 1\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 1 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:29:27.849Z",
+      "adminCard": "SIM-MQTT-01\nTrống\nCửa: CLOSED · ONLINE",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 1\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 1 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:30:25.570Z",
+      "adminCard": "SIM-MQTT-01\nĐã giữ chỗ\nCửa: CLOSED · ONLINE\nTEST_BOOKING",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 1 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:30:29.418Z",
+      "adminCard": "SIM-MQTT-01\nĐã giữ chỗ\nCửa: CLOSED · ONLINE\nTEST_BOOKING",
+      "kioskCard": "SIM-MQTT-01\n\nĐã giữ chỗ · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:33:56.789Z",
+      "adminCard": "SIM-MQTT-01\nĐã giữ chỗ\nCửa: OPEN · ONLINE\nTEST_BOOKING",
+      "kioskCard": "SIM-MQTT-01\n\nĐã giữ chỗ · Bình thường\n\nCửa: Mở · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 1\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:34:06.928Z",
+      "adminCard": "SIM-MQTT-01\nĐang lưu đồ\nCửa: CLOSED · ONLINE\nTEST_BOOKING",
+      "kioskCard": "SIM-MQTT-01\n\nĐang sử dụng · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 1",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 1"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:37:27.441Z",
+      "adminCard": "SIM-MQTT-01\nĐang lưu đồ\nCửa: OPEN · ONLINE\nTEST_BOOKING",
+      "kioskCard": "SIM-MQTT-01\n\nĐang sử dụng · Bình thường\n\nCửa: Mở · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 1",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 1"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:37:48.907Z",
+      "adminCard": "SIM-MQTT-01\nTrống\nCửa: CLOSED · ONLINE",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:39:32.665Z",
+      "adminCard": "SIM-MQTT-01\nTrống\nCửa: CLOSED · OFFLINE",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Mất kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 0"
+    },
+    {
+      "observedAtUtc": "2026-11-05T02:40:33.570Z",
+      "adminCard": "SIM-MQTT-01\nTrống\nCửa: CLOSED · ONLINE",
+      "kioskCard": "SIM-MQTT-01\n\nTrống · Bình thường\n\nCửa: Đóng · Kết nối",
+      "adminReservations": "Size S\n\nChờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0\n\nĐang lưu đồ: 0",
+      "kioskReservations": "Chờ thanh toán: 0\n\nĐã đặt, chờ gửi: 0\n\nChưa cấp ngăn: 0 · Đang lưu đồ: 0"
+    }
+  ],
+  "browserPageErrors": [],
+  "offline": {
+    "offlineObserved": true,
+    "observedUtc": "2026-11-05T02:39:37.195Z",
+    "availableS": 0,
+    "lockers": [
+      {
+        "size": "L",
+        "businessStatus": "AVAILABLE",
+        "doorState": "OPEN",
+        "connectivityStatus": "OFFLINE"
+      },
+      {
+        "size": "M",
+        "businessStatus": "AVAILABLE",
+        "doorState": "OPEN",
+        "connectivityStatus": "OFFLINE"
+      },
+      {
+        "size": "S",
+        "businessStatus": "AVAILABLE",
+        "doorState": "CLOSED",
+        "connectivityStatus": "OFFLINE"
+      }
+    ]
+  },
+  "credentialReplays": {
+    "results": [
+      {
+        "mode": "check-in",
+        "kind": "ACCESS_CODE",
+        "status": 400
+      },
+      {
+        "mode": "check-in",
+        "kind": "QR",
+        "status": 400
+      },
+      {
+        "mode": "check-out",
+        "kind": "ACCESS_CODE",
+        "status": 400
+      },
+      {
+        "mode": "check-out",
+        "kind": "QR",
+        "status": 400
+      }
+    ],
+    "state": {
+      "status": "COMPLETED",
+      "pinHidden": true,
+      "qrHidden": true,
+      "offlineHidden": true
+    }
+  },
+  "otherCompartments": "M/L remained AVAILABLE with actual OPEN door readings; do not claim CLOSED or currently bookable",
+  "limitations": [
+    "QR wedge input was exercised, not optical camera",
+    "No real overdue fee transfer or camera/manual-approval acceptance is claimed",
+    "Unmapped inventory remains visible to Admin and is not presented as connected hardware"
+  ],
+  "browserNetworkRecovery": {
+    "phases": [
+      "BROWSER_OFFLINE",
+      "NETWORK_RECOVERED"
+    ],
+    "pageErrors": [],
+    "staleRowsCleared": true,
+    "actualApiRecovered": true
+  }
+}
