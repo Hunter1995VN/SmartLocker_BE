@@ -227,6 +227,8 @@ public class KioskService : IKioskService
         if (booking == null)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không tìm thấy thông tin đơn đặt chỗ tương ứng.");
 
+        if (!string.IsNullOrEmpty(booking.ManualConfirmPhotoUrl))
+            return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Đang chờ nhân viên duyệt ảnh. Không mở lại tủ.");
         if (booking.Status != BookingStatus.STORED)
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Chỉ có thể lấy đồ với đơn đang lưu trữ.");
 
@@ -314,7 +316,55 @@ public class KioskService : IKioskService
     }
 
     public Task<ApiResponse<bool>> ManualConfirmAsync(KioskManualConfirmRequest request) =>
-        Task.FromResult(ApiResponse<bool>.ErrorResponse("Chưa có xác nhận từ cảm biến. Vui lòng liên hệ nhân viên để kiểm tra tủ."));
+        _context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            if (_context.Database.IsRelational() && _context is DbContext tracked) tracked.ChangeTracker.Clear();
+            await using var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
+            var result = await ManualConfirmCoreAsync(request);
+            if (result.Success && transaction != null) await transaction.CommitAsync();
+            return result;
+        });
+
+    private async Task<ApiResponse<bool>> ManualConfirmCoreAsync(KioskManualConfirmRequest request)
+    {
+        if (string.IsNullOrEmpty(request.SessionToken) || request.SessionToken.Length != 64)
+            return ApiResponse<bool>.ErrorResponse("Phiên kiosk không hợp lệ.");
+        var sessionHash = OnlineTicket.HashPin(request.SessionToken);
+        var booking = await _context.Bookings.Include(b => b.Locker).FirstOrDefaultAsync(b => b.Id == request.BookingId
+            && b.StationId == request.StationId && b.LockerId == request.LockerId && b.KioskSessionHash == sessionHash
+            && b.KioskSessionExpiresAt > DateTime.UtcNow);
+        if (booking == null || booking.Status != BookingStatus.STORED || booking.CheckedOutAt == null
+            || booking.CheckedOutAt > DateTime.UtcNow.AddSeconds(-30))
+            return ApiResponse<bool>.ErrorResponse("Yêu cầu không hợp lệ hoặc chưa đến thời gian báo lỗi cảm biến.");
+        if (request.Notes?.Length > 500) return ApiResponse<bool>.ErrorResponse("Ghi chú tối đa 500 ký tự.");
+        if (!SupportInput.IsJpeg(request.PhotoBase64, 2_000_000))
+            return ApiResponse<bool>.ErrorResponse("Cần ảnh JPEG bằng chứng, tối đa 2 MB.");
+        byte[] photo;
+        try { photo = Convert.FromBase64String(request.PhotoBase64!.Split(',')[1]); }
+        catch (FormatException) { return ApiResponse<bool>.ErrorResponse("Ảnh không hợp lệ."); }
+        if (photo.Length < 4 || photo.Length > 2_000_000 || photo[0] != 0xff || photo[1] != 0xd8
+            || photo[^2] != 0xff || photo[^1] != 0xd9)
+            return ApiResponse<bool>.ErrorResponse("Ảnh JPEG không hợp lệ.");
+        if (!string.IsNullOrEmpty(booking.ManualConfirmPhotoUrl))
+            return ApiResponse<bool>.SuccessResponse(true, "Yêu cầu đã được gửi, đang chờ nhân viên duyệt.");
+        var name = Guid.NewGuid().ToString("N") + ".jpg";
+        var folder = Path.Combine(AppContext.BaseDirectory, "App_Data", "manual-confirm");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllBytesAsync(Path.Combine(folder, name), photo);
+        booking.ManualConfirmPhotoUrl = name;
+        _context.SecurityIncidents.Add(new SecurityIncident
+        {
+            Id = Guid.NewGuid(), IncidentCode = "MC-" + Guid.NewGuid().ToString("N")[..12],
+            StationId = booking.StationId, LockerId = request.LockerId, BookingId = booking.Id,
+            ReportedByUserId = booking.UserId, Type = IncidentType.DOOR_JAMMED,
+            Severity = "HIGH", Status = IncidentStatus.OPEN,
+            Description = "UC-S08: Khách gửi ảnh báo lỗi cảm biến. Cần nhân viên duyệt trước khi đóng đơn.",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+        return ApiResponse<bool>.SuccessResponse(true, "Đã gửi ảnh. Vui lòng chờ nhân viên xác nhận.");
+    }
 
     public async Task<ApiResponse<KioskStationStatusResponse>> GetStationStatusAsync(Guid stationId)
     {
