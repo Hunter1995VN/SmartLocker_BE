@@ -12,6 +12,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
 {
     public SmartLockerDbContext(DbContextOptions<SmartLockerDbContext> options) : base(options) { }
 
+    public DbSet<PickupDelegation> PickupDelegations => Set<PickupDelegation>();
     public DbSet<WalkInSession> WalkInSessions => Set<WalkInSession>();
     public DbSet<LostItemReport> LostItemReports => Set<LostItemReport>();
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -35,6 +36,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.PickupDelegationConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.WalkInSessionConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.StationReviewConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.LostItemReportConfiguration());

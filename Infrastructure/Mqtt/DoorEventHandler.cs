@@ -114,6 +114,8 @@ public sealed class DoorEventHandler(
                         credential.RevokedAt = DateTime.UtcNow;
                         credential.RevokeReason = "Checkout completed";
                     }
+                    var grants = await db.PickupDelegations.Where(x => x.BookingId == activeBooking.Id && x.UsedAt == null && x.RevokedAt == null).ToListAsync(ct);
+                    foreach (var grant in grants) grant.RevokedAt = DateTime.UtcNow;
                     logger.LogInformation("Booking {BookingCode} transitioned to COMPLETED upon door close.", activeBooking.BookingCode);
                 }
             }

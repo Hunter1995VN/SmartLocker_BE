@@ -87,6 +87,9 @@ public class KioskService : IKioskService
         if (!string.Equals(type, "ACCESS_CODE", StringComparison.OrdinalIgnoreCase)
             || payload.Length != 8 || payload.Any(c => c < '0' || c > '9')) return null;
         var hash = OnlineTicket.HashPin(payload);
+        // A PIN shared by owner and delegation namespaces is ambiguous; never pick an arbitrary booking.
+        if (await _context.PickupDelegations.AnyAsync(x => x.Booking.StationId == stationId && x.PinHash == hash
+            && x.UsedAt == null && x.RevokedAt == null && x.ExpiresAt > now)) return null;
         // Reject ambiguous PINs rather than selecting an arbitrary booking.
         var matches = await query.Where(b => b.AccessCredential!.AccessCodeHash == hash
             && (b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED)).Take(2).ToListAsync();
@@ -214,7 +217,22 @@ public class KioskService : IKioskService
         if (request.StationId == Guid.Empty || string.IsNullOrWhiteSpace(request.Payload))
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Dữ liệu xác thực không hợp lệ.");
 
+        PickupDelegation? delegation = null;
         var booking = await FindAuthorizedBookingAsync(request.StationId, request.CredentialType, request.Payload.Trim());
+        if (booking == null && request.CredentialType == "ACCESS_CODE" && request.Payload.Length == 8
+            && request.Payload.All(c => c >= '0' && c <= '9'))
+        {
+            var hash = OnlineTicket.HashPin(request.Payload);
+            var grants = await _context.PickupDelegations.Include(x => x.Booking).ThenInclude(b => b.Locker)
+                .Include(x => x.Booking).ThenInclude(b => b.Payments)
+                .Include(x => x.Booking).ThenInclude(b => b.AccessCredential)
+                .Where(x => x.Booking.StationId == request.StationId && x.Booking.Status == BookingStatus.STORED
+                    && x.PinHash == hash && x.UsedAt == null && x.RevokedAt == null && x.ExpiresAt > DateTime.UtcNow)
+                .Take(2).ToListAsync();
+            var ownerCollision = await _context.AccessCredentials.AnyAsync(x => x.Booking.StationId == request.StationId && x.IsActive && x.RevokedAt == null && x.AccessCodeHash == hash);
+            if (!ownerCollision && grants.Count == 1 && grants[0].Booking.AccessCredential is { IsActive: true, RevokedAt: null }) { delegation = grants[0]; booking = delegation.Booking; }
+        }
+
         if (booking == null && string.Equals(request.CredentialType, "QR", StringComparison.OrdinalIgnoreCase) && request.SessionToken?.Length == 64)
         {
             var sessionHash = FeeSessionHash(request.CredentialType, request.Payload, request.SessionToken);
@@ -297,6 +315,12 @@ public class KioskService : IKioskService
             return ApiResponse<KioskCheckOutResponse>.ErrorResponse("Không gửi được lệnh mở tủ. Vui lòng thử lại hoặc liên hệ nhân viên.");
         }
 
+        if (delegation != null)
+        {
+            delegation.UsedAt = DateTime.UtcNow;
+            _context.AuditLogs.Add(new AuditLog { Action = "DELEGATE_PICKUP", TargetEntity = "Booking", TargetId = booking.Id.ToString(), Details = "Delegate " + delegation.Id });
+            await _context.SaveChangesAsync();
+        }
         // Dispatch SignalR
         try { await _notificationService.NotifyLockerUnlockedAsync(request.StationId, locker.Id, locker.LockerCode); }
         catch (Exception ex) { _logger.LogWarning("Unlock notification failed ({ErrorType}); operation remains pending sensor confirmation.", ex.GetType().Name); }
