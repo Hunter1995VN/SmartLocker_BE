@@ -69,6 +69,7 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description = "SmartLocker Management System - .NET 8 Clean Architecture"
     });
+    c.CustomSchemaIds(type => type.FullName?.Replace('+', '.') ?? type.Name);
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",

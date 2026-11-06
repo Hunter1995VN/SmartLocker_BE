@@ -31,10 +31,10 @@ public class ManualConfirmController(ISmartLockerDbContext db, ILockerNotificati
         return File(await System.IO.File.ReadAllBytesAsync(path), "image/jpeg");
     }
 
-    public record ReviewRequest(string Reason);
+    public record ManualConfirmApproveRequest(string Reason);
 
     [HttpPost("{id:guid}/approve")]
-    public Task<IActionResult> Approve(Guid id, ReviewRequest request) => db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+    public Task<IActionResult> Approve(Guid id, ManualConfirmApproveRequest request) => db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
     {
         if (db.Database.IsRelational() && db is DbContext tracked) tracked.ChangeTracker.Clear();
         await using var transaction = db.Database.IsRelational()
@@ -49,7 +49,7 @@ public class ManualConfirmController(ISmartLockerDbContext db, ILockerNotificati
         return result;
     });
 
-    private async Task<IActionResult> ApproveCore(Guid id, ReviewRequest request)
+    private async Task<IActionResult> ApproveCore(Guid id, ManualConfirmApproveRequest request)
     {
         if (!Guid.TryParse(User.FindFirstValue("uid") ?? User.FindFirstValue(ClaimTypes.NameIdentifier), out var staffId)) return Unauthorized();
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500)
