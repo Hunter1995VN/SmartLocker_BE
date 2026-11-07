@@ -52,4 +52,31 @@ public class LockerNotificationService : ILockerNotificationService
             timestamp = DateTimeOffset.UtcNow.ToString("O")
         });
     }
+
+    public async Task NotifyDeviceRebootingAsync(Guid stationId, string deviceCode)
+    {
+        var groupName = $"station_{stationId.ToString().ToLowerInvariant()}";
+        _logger.LogInformation("SignalR dispatching DeviceRebooting to {GroupName}: Device={DeviceCode}", groupName, deviceCode);
+
+        await _hubContext.Clients.Group(groupName).SendAsync("DeviceRebooting", new
+        {
+            stationId,
+            deviceCode,
+            rebootingAt = DateTimeOffset.UtcNow.ToString("O")
+        });
+    }
+
+    public async Task NotifySelfTestResultAsync(Guid stationId, string deviceCode, object result)
+    {
+        var groupName = $"station_{stationId.ToString().ToLowerInvariant()}";
+        _logger.LogInformation("SignalR dispatching DeviceSelfTestResult to {GroupName}: Device={DeviceCode}", groupName, deviceCode);
+
+        await _hubContext.Clients.Group(groupName).SendAsync("DeviceSelfTestResult", new
+        {
+            stationId,
+            deviceCode,
+            data = result,
+            receivedAt = DateTimeOffset.UtcNow.ToString("O")
+        });
+    }
 }

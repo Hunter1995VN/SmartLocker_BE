@@ -54,12 +54,15 @@ public sealed class MqttSubscriberService(
                         {
                             if (args.ApplicationMessage.PayloadSegment.Count > 4096)
                             {
-                                logger.LogWarning("Ignored oversized MQTT door event.");
+                                logger.LogWarning("Ignored oversized MQTT message.");
                                 return;
                             }
                             using var scope = scopeFactory.CreateScope();
                             if (args.ApplicationMessage.Topic.EndsWith("/heartbeat", StringComparison.Ordinal))
                                 await scope.ServiceProvider.GetRequiredService<HeartbeatEventHandler>().HandleAsync(
+                                    args.ApplicationMessage.Topic, args.ApplicationMessage.ConvertPayloadToString(), args.ApplicationMessage.Retain, stoppingToken);
+                            else if (args.ApplicationMessage.Topic.EndsWith("/diagnostics", StringComparison.Ordinal))
+                                await scope.ServiceProvider.GetRequiredService<DiagnosticsEventHandler>().HandleAsync(
                                     args.ApplicationMessage.Topic, args.ApplicationMessage.ConvertPayloadToString(), args.ApplicationMessage.Retain, stoppingToken);
                             else
                                 await scope.ServiceProvider.GetRequiredService<DoorEventHandler>().HandleAsync(
@@ -68,7 +71,7 @@ public sealed class MqttSubscriberService(
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
                         catch (Exception ex)
                         {
-                            logger.LogError("MQTT door processing failed ({ErrorType}); event was not saved.", ex.GetType().Name);
+                            logger.LogError("MQTT message processing failed ({ErrorType}); event was not saved.", ex.GetType().Name);
                         }
                         return;
                     }
@@ -89,6 +92,8 @@ public sealed class MqttSubscriberService(
                         .WithTopicFilter(filter => filter.WithTopic(settings.DoorEventTopic)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .WithTopicFilter(filter => filter.WithTopic(settings.HeartbeatTopic)
+                            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
+                        .WithTopicFilter(filter => filter.WithTopic(settings.DiagnosticsTopic)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .Build(), stoppingToken);
                     if (subscription.Items.Any(item => (int)item.ResultCode >= 128))

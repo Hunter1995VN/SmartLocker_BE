@@ -8,6 +8,7 @@ public interface IKioskService
     Task<ApiResponse<KioskCheckInResponse>> CheckInAsync(KioskCheckInRequest request);
     Task<ApiResponse<KioskOperationStatusResponse>> GetOperationStatusAsync(KioskOperationStatusRequest request);
     Task<ApiResponse<KioskCheckOutResponse>> CheckOutAsync(KioskCheckOutRequest request);
+    Task<ApiResponse<KioskCheckOutResponse>> OfflineCheckOutAsync(KioskCheckOutRequest request);
     Task<ApiResponse<KioskOverduePaymentResponse>> CreateOverduePaymentAsync(KioskOverduePaymentRequest request);
     Task<ApiResponse<bool>> ConfirmOverduePaymentDemoAsync(KioskOverduePaymentRequest request);
     Task<ApiResponse<Application.DTOs.Booking.CreateBookingResponse>> PayOverdueAsync(KioskFeePaymentRequest request);

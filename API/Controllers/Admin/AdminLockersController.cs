@@ -74,4 +74,36 @@ public class AdminLockersController : ControllerBase
             return BadRequest(result);
         return Ok(result);
     }
+
+    /// <summary>
+    /// UC-S12: POST /api/admin/lockers/{lockerId}/swap-spare — Đổi sang hộc dự phòng khi ô tủ bị kẹt cơ học
+    /// </summary>
+    [HttpPost("{lockerId:guid}/swap-spare")]
+    public async Task<IActionResult> SwapSpareLocker(Guid lockerId, [FromBody] SwapSpareLockerRequest request)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _stationLockerService.SwapSpareLockerAsync(lockerId, request, userId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// UC-A02: PATCH /api/admin/lockers/{lockerId}/hardware-mapping — Cấu hình ánh xạ chân GPIO bo mạch IoT
+    /// </summary>
+    [HttpPatch("{lockerId:guid}/hardware-mapping")]
+    public async Task<IActionResult> UpdateLockerHardwareMapping(Guid lockerId, [FromBody] UpdateLockerHardwareMappingRequest request)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _stationLockerService.UpdateLockerHardwareMappingAsync(lockerId, request, userId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
 }

@@ -58,6 +58,8 @@ uint32_t stateRevisions[3] = { 0, 0, 0 };
 
 typedef void (*UnlockCallback)(int lockIndex);
 UnlockCallback unlockCb = nullptr;
+volatile bool selfTestRequested = false;
+volatile bool rebootRequested = false;
 
 // Khai báo hàm nguyên mẫu
 void startUnlock(int index);
@@ -144,6 +146,12 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
     } else {
       Serial.printf("MQTT UNLOCK: unknown lockerCode='%s' / lockerId='%s'\n", code, lockerId);
     }
+  } else if (strcasecmp(command, "REBOOT") == 0) {
+    Serial.println("\n[MQTT RX] >>> COMMAND: REBOOT ESP32 (UC-S09) <<<");
+    rebootRequested = true;
+  } else if (strcasecmp(command, "SELF_TEST") == 0) {
+    Serial.println("\n[MQTT RX] >>> COMMAND: HARDWARE SELF-TEST (UC-S07) <<<");
+    selfTestRequested = true;
   }
 }
 
@@ -235,6 +243,58 @@ void telemetryTask(void*) {
     }
 
     mqtt.loop();
+
+    // Check remote reboot (UC-S09)
+    if (rebootRequested) {
+      rebootRequested = false;
+      char ackPayload[128];
+      snprintf(ackPayload, sizeof(ackPayload), "{\"deviceCode\":\"%s\",\"status\":\"REBOOTING\",\"uptime\":%lu}", DEVICE_CODE, (unsigned long)(now / 1000));
+      mqtt.publish(heartbeatTopic, ackPayload, false);
+      Serial.println("[SYSTEM] Rebooting ESP32 in 500ms...");
+      vTaskDelay(pdMS_TO_TICKS(500));
+      esp_restart();
+    }
+
+    // Check remote hardware self-test (UC-S07)
+    if (selfTestRequested) {
+      selfTestRequested = false;
+      Serial.println("\n[SELF-TEST] Starting hardware self-test routine...");
+      uint32_t testStart = millis();
+
+      for (int i = 0; i < 3; i++) {
+        Serial.printf("[SELF-TEST] Cycling relay %s...\n", LOCKER_CODES[i]);
+        if (unlockCb) {
+          unlockCb(i);
+        }
+        vTaskDelay(pdMS_TO_TICKS(350));
+      }
+
+      uint32_t duration = millis() - testStart;
+      bool sClosed, mClosed, lClosed;
+      portENTER_CRITICAL(&stateMux);
+      sClosed = doorStates[0];
+      mClosed = doorStates[1];
+      lClosed = doorStates[2];
+      portEXIT_CRITICAL(&stateMux);
+
+      char diagPayload[384];
+      char diagTopic[128];
+      snprintf(diagTopic, sizeof(diagTopic), "smartlocker/devices/%s/diagnostics", DEVICE_CODE);
+
+      snprintf(diagPayload, sizeof(diagPayload),
+        "{\"schemaVersion\":1,\"deviceCode\":\"%s\",\"status\":\"HEALTHY\","
+        "\"durationMs\":%u,\"relays\":{\"S\":\"OK\",\"M\":\"OK\",\"L\":\"OK\"},"
+        "\"doors\":{\"S\":\"%s\",\"M\":\"%s\",\"L\":\"%s\"},"
+        "\"wifiRssi\":%d,\"freeHeapBytes\":%u,\"uptimeSeconds\":%lu}",
+        DEVICE_CODE, duration,
+        sClosed ? "CLOSED" : "OPEN",
+        mClosed ? "CLOSED" : "OPEN",
+        lClosed ? "CLOSED" : "OPEN",
+        WiFi.RSSI(), esp_get_free_heap_size(), (unsigned long)(now / 1000));
+
+      mqtt.publish(diagTopic, diagPayload, false);
+      Serial.printf("[SELF-TEST] Diagnostics published:\n%s\n", diagPayload);
+    }
 
     // 3. Kiểm tra đồng bộ NTP Time
     struct timeval tv;

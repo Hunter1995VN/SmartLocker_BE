@@ -40,6 +40,17 @@ public class AdminStationsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/admin/stations/devices — UC-S01: Danh sách thiết bị vi điều khiển IoT ESP32 toàn hệ thống
+    /// </summary>
+    [HttpGet("devices")]
+    [Authorize(Roles = "ADMIN,STAFF")]
+    public async Task<IActionResult> GetIoTDevices()
+    {
+        var result = await _stationLockerService.GetIoTDevicesAsync();
+        return Ok(result);
+    }
+
+    /// <summary>
     /// GET /api/admin/stations/{id} — Chi tiết trạm + bảng giá + availability
     /// </summary>
     [HttpGet("{id:guid}")]
@@ -116,6 +127,83 @@ public class AdminStationsController : ControllerBase
         var result = await _stationLockerService.UpdatePricingPolicyAsync(stationId, request, userId);
         if (!result.Success)
             return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/admin/stations/{stationId}/reboot — UC-S09: Khởi động lại vi điều khiển ESP32 từ xa
+    /// </summary>
+    [HttpPost("{stationId:guid}/reboot")]
+    [Authorize(Roles = "ADMIN,STAFF")]
+    public async Task<IActionResult> RebootDevice(Guid stationId)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _stationLockerService.RebootDeviceAsync(stationId, userId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/admin/stations/{stationId}/self-test — UC-S07: Kích hoạt chu trình chẩn đoán phần cứng tự động
+    /// </summary>
+    [HttpPost("{stationId:guid}/self-test")]
+    [Authorize(Roles = "ADMIN,STAFF")]
+    public async Task<IActionResult> TriggerSelfTest(Guid stationId)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _stationLockerService.TriggerSelfTestAsync(stationId, userId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// GET /api/admin/stations/{stationId}/security-thresholds — UC-A11: Lấy cấu hình ngưỡng an ninh & timeout cửa mở
+    /// </summary>
+    [HttpGet("{stationId:guid}/security-thresholds")]
+    [Authorize(Roles = "ADMIN,STAFF")]
+    public async Task<IActionResult> GetSecurityThresholds(Guid stationId)
+    {
+        var result = await _stationLockerService.GetSecurityThresholdsAsync(stationId);
+        if (!result.Success)
+            return NotFound(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// PUT /api/admin/stations/{stationId}/security-thresholds — UC-A11: Cập nhật cấu hình ngưỡng an ninh & timeout cửa mở
+    /// </summary>
+    [HttpPut("{stationId:guid}/security-thresholds")]
+    [Authorize(Roles = "ADMIN")]
+    public async Task<IActionResult> UpdateSecurityThresholds(Guid stationId, [FromBody] UpdateSecurityThresholdsRequest request)
+    {
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new { message = "Không xác định được người dùng" });
+
+        var result = await _stationLockerService.UpdateSecurityThresholdsAsync(stationId, request, userId);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// UC-S03: GET /api/admin/stations/{stationId}/door-telemetry — Lấy dữ liệu cảm biến cửa và Telemetry trạm
+    /// </summary>
+    [HttpGet("{stationId:guid}/door-telemetry")]
+    [Authorize(Roles = "ADMIN,STAFF")]
+    public async Task<IActionResult> GetDoorTelemetry(Guid stationId)
+    {
+        var result = await _stationLockerService.GetDoorTelemetryAsync(stationId);
+        if (!result.Success)
+            return NotFound(result);
         return Ok(result);
     }
 }
