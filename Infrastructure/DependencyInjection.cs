@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddSingleton<IOtpGenerator, OtpGenerator>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<IOtpSender, EmailOtpSender>();
+        services.AddScoped<Application.Interfaces.IPickupDelegationNotifier, EmailPickupDelegationNotifier>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddHttpClient<IGoogleAuthService, GoogleAuthService>();
         services.AddScoped<IUserProfileService, UserProfileService>();

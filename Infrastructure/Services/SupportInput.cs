@@ -7,8 +7,10 @@ public static class SupportInput
         if (string.IsNullOrWhiteSpace(contact) || contact.Length > 255) return false;
         var value = contact.Trim();
         if (value.Contains('@')) return System.Net.Mail.MailAddress.TryCreate(value, out var mail) && mail.Address == value;
-        var digits = value.Count(c => c >= '0' && c <= '9');
-        return value.Length <= 30 && digits is >= 8 and <= 15 && value.All(c => char.IsAsciiDigit(c) || "+(). -".Contains(c));
+        // Số điện thoại: tối đa một dấu + ở đầu, 8–15 chữ số, chỉ cho phép dấu cách, ngoặc, chấm, gạch nối làm phân cách.
+        var digits = value.Count(char.IsAsciiDigit);
+        return value.Length <= 30 && digits is >= 8 and <= 15
+            && System.Text.RegularExpressions.Regex.IsMatch(value, @"^\+?[0-9(][0-9 ().-]*$");
     }
     public static bool IsJpeg(string? data, int maxBytes)
     {

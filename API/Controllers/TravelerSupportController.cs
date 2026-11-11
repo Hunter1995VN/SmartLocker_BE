@@ -14,10 +14,11 @@ namespace API.Controllers;
 [ApiController, Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("api/bookings/{bookingId:guid}/support")]
-public class TravelerSupportController(ISmartLockerDbContext db) : ControllerBase
+public class TravelerSupportController(ISmartLockerDbContext db, IPickupDelegationNotifier delegationNotifier) : ControllerBase
 {
     private Guid UserId => Guid.TryParse(User.FindFirstValue("uid") ?? User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
     private Task<Booking?> Owned(Guid id) => db.Bookings.Include(b => b.Locker).FirstOrDefaultAsync(b => b.Id == id && b.UserId == UserId);
+    private sealed record Issued(object Delegations, Guid Id, string Pin, DateTime ExpiresAt, string StationName, string BookingCode, string Contact);
     public record DelegateRequest(string Contact, int ValidMinutes = 60);
     public record ReviewRequest(int Stars, string? Comment, string[]? Criteria);
     public record LostRequest(string Description, string? Photo);
@@ -33,7 +34,23 @@ public class TravelerSupportController(ISmartLockerDbContext db) : ControllerBas
     });
 
     [HttpPost("delegations")]
-    public Task<IActionResult> Delegate(Guid bookingId, DelegateRequest request) => InTransaction(() => DelegateCore(bookingId, request));
+    public async Task<IActionResult> Delegate(Guid bookingId, DelegateRequest request)
+    {
+        var result = await InTransaction(() => DelegateCore(bookingId, request));
+        if (result is not OkObjectResult { Value: Issued issued }) return result;
+        // Gửi mã chỉ sau khi giao dịch đã commit: không bao giờ có thư chứa mã của một ủy quyền chưa được lưu.
+        DelegationDelivery delivery;
+        try
+        {
+            delivery = await delegationNotifier.SendAsync(issued.Contact, issued.Pin, issued.ExpiresAt, issued.StationName, issued.BookingCode, HttpContext?.RequestAborted ?? default);
+        }
+        catch
+        {
+            delivery = new(issued.Contact.Contains('@') ? "EMAIL" : "MANUAL", false, "SEND_FAILED");
+        }
+        Response.Headers.CacheControl = "no-store";
+        return Ok(new { issued.Delegations, issued.Id, issued.Pin, issued.ExpiresAt, delivery });
+    }
 
     private async Task<IActionResult> DelegateCore(Guid bookingId, DelegateRequest request)
     {
@@ -63,8 +80,9 @@ public class TravelerSupportController(ISmartLockerDbContext db) : ControllerBas
         db.AuditLogs.Add(new AuditLog { UserId = UserId, Action = "CREATE_PICKUP_DELEGATION", TargetEntity = "Booking", TargetId = bookingId.ToString(), Details = "Delegate " + grant.Id });
         await db.SaveChangesAsync();
         Response.Headers.CacheControl = "no-store";
-        return Ok(new {
-            delegations = await db.PickupDelegations.Where(x => x.BookingId == bookingId).Select(x => new { x.Id, x.Contact, x.ExpiresAt, x.UsedAt, x.RevokedAt }).ToListAsync(), grant.Id, pin, grant.ExpiresAt });
+        var stationName = await db.Stations.Where(x => x.Id == booking.StationId).Select(x => x.Name).FirstOrDefaultAsync() ?? string.Empty;
+        var delegations = await db.PickupDelegations.Where(x => x.BookingId == bookingId).Select(x => new { x.Id, x.Contact, x.ExpiresAt, x.UsedAt, x.RevokedAt }).ToListAsync();
+        return Ok(new Issued(delegations, grant.Id, pin, grant.ExpiresAt, stationName, booking.BookingCode, grant.Contact));
     }
 
     [HttpDelete("delegations/{id:guid}")]
