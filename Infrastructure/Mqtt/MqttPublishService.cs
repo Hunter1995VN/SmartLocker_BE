@@ -41,16 +41,11 @@ public class MqttPublishService : IMqttPublishService, IAsyncDisposable
             _client?.Dispose();
             _client = _factory.CreateMqttClient();
 
-            var builder = new MqttClientOptionsBuilder()
-                .WithTcpServer(_options.Host, _options.Port)
+            // TLS handshakes to a cloud broker need more than the 5 s that suffices on the LAN.
+            var builder = _options.ApplyConnection(new MqttClientOptionsBuilder())
                 .WithClientId($"smartlocker-publisher-{Guid.NewGuid():N}")
                 .WithCleanSession()
-                .WithTimeout(TimeSpan.FromSeconds(5));
-
-            if (!string.IsNullOrWhiteSpace(_options.Username))
-            {
-                builder.WithCredentials(_options.Username, _options.Password);
-            }
+                .WithTimeout(TimeSpan.FromSeconds(_options.UseTls ? 10 : 5));
 
             var clientOptions = builder.Build();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
