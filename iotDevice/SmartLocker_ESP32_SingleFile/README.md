@@ -14,9 +14,9 @@ Each LOCKER_*_ID must equal the real database GUID of the corresponding compartm
 
 ## Cloud broker (deployed API only, no local backend)
 
-The deployed API cannot reach a broker inside the kiosk's LAN, so for the hosted system both the ESP32 and the API must use the same Internet broker (for example a HiveMQ Cloud or EMQX Serverless cluster on port 8883 with its own username/password):
+The deployed API cannot reach a broker inside the kiosk's LAN, so for the hosted system both the ESP32 and the API must use the same Internet broker. The project uses an EMQX Cloud Serverless deployment (free monthly quota, TLS on 8883 only, username/password required; HiveMQ Cloud Serverless no longer accepts new clusters):
 
-- Device (`iot_config.h`): `#define MQTT_USE_TLS 1`, `MQTT_HOST` = broker hostname, `MQTT_PORT` = 8883, broker credentials, and `MQTT_ROOT_CA` = the root that signed the broker certificate (ISRG Root X1 is in the example for HiveMQ Cloud). The device only connects after NTP time is set, because the certificate dates are checked.
+- Device (`iot_config.h`): `#define MQTT_USE_TLS 1`, `MQTT_HOST` = deployment address, `MQTT_PORT` = 8883, an EMQX authentication entry, and `MQTT_ROOT_CA` = the roots of the broker chain (the example holds DigiCert Global Root G2 and DigiCert Global Root CA for EMQX). The device only connects after NTP time is set, because the certificate dates are checked.
 - API (host environment variables, never in Git): `Mqtt__Enabled=true`, `Mqtt__Host=<hostname>`, `Mqtt__Port=8883`, `Mqtt__UseTls=true`, `Mqtt__Username`, `Mqtt__Password`. The broker certificate is validated against the server's trust store.
 - Restrict the broker account to `smartlocker/devices/<DEVICE_CODE>/#` where the broker supports ACLs. A broker without authentication lets anyone send UNLOCK commands; do not use one for a real locker.
 - The API's MQTT subscriber only runs while the site is awake. If the host idles the app, heartbeats are missed and the station shows OFFLINE until the next request wakes it.
