@@ -49,7 +49,7 @@ public class GoogleAuthService : IGoogleAuthService
             }
 
             // Chỉ tin email đã được Google xác minh, tránh chiếm tài khoản bằng email chưa xác minh.
-            if (payload.EmailVerified == false)
+            if (payload.EmailVerified != true)
             {
                 _logger.LogWarning("⚠️ Google email chưa được xác minh, từ chối đăng nhập");
                 return null;
