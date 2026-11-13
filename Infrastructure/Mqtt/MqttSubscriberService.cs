@@ -12,13 +12,15 @@ namespace Infrastructure.Mqtt;
 public sealed class MqttSubscriberService(
     IOptions<MqttOptions> options,
     ILogger<MqttSubscriberService> logger,
-    IServiceScopeFactory scopeFactory) : BackgroundService
+    IServiceScopeFactory scopeFactory,
+    MqttConnectionStatus status) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var settings = options.Value;
         if (!settings.Enabled)
         {
+            status.MarkDisabled();
             logger.LogInformation("MQTT is disabled. Set Mqtt:Enabled to true to enable it.");
             return;
         }
@@ -27,6 +29,7 @@ public sealed class MqttSubscriberService(
             || string.IsNullOrWhiteSpace(settings.ClientId) || string.IsNullOrWhiteSpace(settings.Topic)
             || settings.ReconnectDelaySeconds < 1)
         {
+            status.MarkInvalidConfiguration();
             logger.LogError("Invalid MQTT configuration; subscriber was not started.");
             return;
         }
@@ -45,6 +48,7 @@ public sealed class MqttSubscriberService(
                 using var client = factory.CreateMqttClient();
                 client.ApplicationMessageReceivedAsync += async args =>
                 {
+                    status.MarkMessageReceived();
                     if (args.ApplicationMessage.Topic != settings.Topic)
                     {
                         try
@@ -82,6 +86,7 @@ public sealed class MqttSubscriberService(
 
                 try
                 {
+                    status.MarkConnecting();
                     await client.ConnectAsync(clientOptions, stoppingToken);
                     var subscription = await client.SubscribeAsync(factory.CreateSubscribeOptionsBuilder()
                         .WithTopicFilter(filter => filter.WithTopic(settings.Topic)
@@ -96,11 +101,13 @@ public sealed class MqttSubscriberService(
                     if (subscription.Items.Any(item => (int)item.ResultCode >= 128))
                         throw new InvalidOperationException("Broker rejected the MQTT subscription.");
 
+                    status.MarkConnected();
                     logger.LogInformation("MQTT connected to {Host}:{Port}; subscribed to {Topic}",
                         settings.Host, settings.Port, settings.Topic);
                     logger.LogInformation("MQTT door subscription: {Topic}", settings.DoorEventTopic);
                     while (client.IsConnected)
                         await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                    status.MarkDisconnected();
                     logger.LogWarning("MQTT disconnected; reconnecting in {Delay} seconds.", settings.ReconnectDelaySeconds);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -109,8 +116,9 @@ public sealed class MqttSubscriberService(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning("MQTT connection/subscription failed ({ErrorType}); retrying in {Delay} seconds.",
-                        ex.GetType().Name, settings.ReconnectDelaySeconds);
+                    status.MarkFailed(ex);
+                    logger.LogWarning("MQTT connection/subscription failed ({Error}); retrying in {Delay} seconds.",
+                        MqttConnectionStatus.Describe(ex), settings.ReconnectDelaySeconds);
                 }
                 finally
                 {

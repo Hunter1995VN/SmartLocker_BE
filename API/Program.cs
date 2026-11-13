@@ -187,7 +187,11 @@ app.MapControllers();
 app.MapHub<API.Hubs.LockerHub>("/hubs/locker");
 
 // Health check endpoint
-app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+// "mqtt" shows whether the broker subscription is up (no credentials or payloads), so a wrong host
+// setting, a blocked port or rejected credentials can be told apart without host logs.
+app.MapGet("/api/health", (Infrastructure.Mqtt.MqttConnectionStatus mqtt,
+        Microsoft.Extensions.Options.IOptions<Infrastructure.Mqtt.MqttOptions> mqttOptions) =>
+    Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, mqtt = mqtt.Snapshot(mqttOptions.Value) }));
 
 // Redirect root to Swagger
 app.MapGet("/", () => Results.Redirect("/swagger/index.html"));
