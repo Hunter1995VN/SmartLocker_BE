@@ -12,6 +12,17 @@ Copy iot_config.example.h to iot_config.h here and supply the actual local Wi-Fi
 
 Each LOCKER_*_ID must equal the real database GUID of the corresponding compartment, mapped to DEVICE_CODE at the same station. Routing uses exact GUIDs and rejects unknown/duplicate mappings. Locker code/size labels alone do not authorize an unlock. Doors use INPUT_PULLUP: switch to GND is CLOSED, released is OPEN. Relay active LOW, 500ms pulse, one relay at a time.
 
+## Cloud broker (deployed API only, no local backend)
+
+The deployed API cannot reach a broker inside the kiosk's LAN, so for the hosted system both the ESP32 and the API must use the same Internet broker. The project uses an EMQX Cloud Serverless deployment (free monthly quota, TLS on 8883 only, username/password required; HiveMQ Cloud Serverless no longer accepts new clusters):
+
+- Device (`iot_config.h`): `#define MQTT_USE_TLS 1`, `MQTT_HOST` = deployment address, `MQTT_PORT` = 8883, an EMQX authentication entry, and `MQTT_ROOT_CA` = the roots of the broker chain (the example holds DigiCert Global Root G2 and DigiCert Global Root CA for EMQX). The device only connects after NTP time is set, because the certificate dates are checked.
+- API (host environment variables, never in Git): `Mqtt__Enabled=true`, `Mqtt__Host=<hostname>`, `Mqtt__Port=8883`, `Mqtt__UseTls=true`, `Mqtt__Username`, `Mqtt__Password`. The broker certificate is validated against the server's trust store.
+- Restrict the broker account to `smartlocker/devices/<DEVICE_CODE>/#` where the broker supports ACLs. A broker without authentication lets anyone send UNLOCK commands; do not use one for a real locker.
+- The API's MQTT subscriber only runs while the site is awake. If the host idles the app, heartbeats are missed and the station shows OFFLINE until the next request wakes it.
+
+## LAN broker (local backend)
+
 Start the local broker from the repository's start-mqtt-broker.ps1. It reads only the ignored local header, binds loopback plus the configured LAN address, authenticates LAN device clients, and restricts device topics. Start the API with MQTT enabled and the same broker; never simulate heartbeats or door events to pass acceptance.
 
 Verify and upload only after retaining a valid pre-update backup. If Windows/Arduino tools cannot handle Unicode workspace paths, build in a temporary ASCII directory containing this sketch and its local header. Do not commit flash dumps or copied headers.
