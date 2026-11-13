@@ -8,5 +8,7 @@ public class StationReview
     public string Comment { get; set; } = "";
     public string Criteria { get; set; } = "";
     public DateTime CreatedAt { get; set; }
+    public bool IsHidden { get; set; }
     public Booking Booking { get; set; } = null!;
+    public ICollection<StationReviewReport> Reports { get; set; } = [];
 }

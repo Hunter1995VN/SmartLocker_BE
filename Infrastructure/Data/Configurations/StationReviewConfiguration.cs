@@ -11,7 +11,9 @@ public class StationReviewConfiguration : IEntityTypeConfiguration<StationReview
         b.HasKey(x => x.Id);
         b.Property(x => x.Comment).HasMaxLength(1000).IsRequired();
         b.Property(x => x.Criteria).HasMaxLength(150).IsRequired();
+        b.Property(x => x.IsHidden).HasDefaultValue(false).IsConcurrencyToken();
         b.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.BookingId).IsUnique();
+        b.HasIndex(x => new { x.IsHidden, x.CreatedAt, x.Id }).IsDescending(false, true, true);
     }
 }

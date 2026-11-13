@@ -17,6 +17,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
     public DbSet<LostItemReport> LostItemReports => Set<LostItemReport>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<StationReview> StationReviews => Set<StationReview>();
+    public DbSet<StationReviewReport> StationReviewReports => Set<StationReviewReport>();
     public DbSet<User> Users => Set<User>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
     public DbSet<Station> Stations => Set<Station>();
@@ -39,6 +40,7 @@ public class SmartLockerDbContext : DbContext, ISmartLockerDbContext
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.PickupDelegationConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.WalkInSessionConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.StationReviewConfiguration());
+        modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.StationReviewReportConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.LostItemReportConfiguration());
         modelBuilder.ApplyConfiguration(new Infrastructure.Data.Configurations.NotificationConfiguration());
 
