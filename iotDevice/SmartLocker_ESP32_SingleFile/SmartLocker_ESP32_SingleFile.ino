@@ -15,6 +15,18 @@
 // ------------------------------------------------------------------------------
 #include "iot_config.h"
 
+// Cloud broker (HiveMQ Cloud / EMQX, port 8883): set MQTT_USE_TLS 1 and MQTT_ROOT_CA in iot_config.h.
+// The broker certificate is verified against MQTT_ROOT_CA; TLS also needs NTP time before it can connect.
+#ifndef MQTT_USE_TLS
+#define MQTT_USE_TLS 0
+#endif
+#if MQTT_USE_TLS
+#include <WiFiClientSecure.h>
+#define MQTT_TASK_STACK 12288
+#else
+#define MQTT_TASK_STACK 6144
+#endif
+
 // ------------------------------------------------------------------------------
 // 2. CẤU HÌNH PHẦN CỨNG (3 RƠ-LE & 3 CẢM BIẾN HÀNH TRÌNH)
 // ------------------------------------------------------------------------------
@@ -159,10 +171,15 @@ void mqttMessageCallback(char* topic, byte* payload, unsigned int length) {
 // 6. TÁC VỤ NỀN MQTT TRÊN CORE 0 (FREERTOS)
 // ------------------------------------------------------------------------------
 void telemetryTask(void*) {
+#if MQTT_USE_TLS
+  WiFiClientSecure network;
+  network.setCACert(MQTT_ROOT_CA);
+#else
   WiFiClient network;
+#endif
   PubSubClient mqtt(network);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setSocketTimeout(3);
+  mqtt.setSocketTimeout(MQTT_USE_TLS ? 10 : 3);
   mqtt.setCallback(mqttMessageCallback);
 
   if (!mqtt.setBufferSize(768)) {
@@ -497,7 +514,7 @@ void setup() {
   doorStates[2] = (doorStableStates[2] == DOOR_CLOSED_LEVEL);
 
   // Khởi chạy tác vụ MQTT trên Core 0
-  xTaskCreatePinnedToCore(telemetryTask, "MqttTask", 6144, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(telemetryTask, "MqttTask", MQTT_TASK_STACK, nullptr, 1, nullptr, 0);
 }
 
 void loop() {

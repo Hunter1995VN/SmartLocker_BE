@@ -32,14 +32,11 @@ public sealed class MqttSubscriberService(
         }
 
         var factory = new MqttFactory();
-        var builder = new MqttClientOptionsBuilder()
-            .WithTcpServer(settings.Host, settings.Port)
+        var clientOptions = settings.ApplyConnection(new MqttClientOptionsBuilder())
             .WithClientId(settings.ClientId)
             .WithCleanSession()
-            .WithTimeout(TimeSpan.FromSeconds(10));
-        if (!string.IsNullOrWhiteSpace(settings.Username))
-            builder.WithCredentials(settings.Username, settings.Password);
-        var clientOptions = builder.Build();
+            .WithTimeout(TimeSpan.FromSeconds(10))
+            .Build();
 
         try
         {
