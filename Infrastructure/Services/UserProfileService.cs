@@ -226,12 +226,47 @@ public class UserProfileService : IUserProfileService
         // Cập nhật thông tin
         user.FullName = request.FullName.Trim();
         user.Phone = cleanPhone;
-        user.AvatarUrl = string.IsNullOrWhiteSpace(request.AvatarUrl) ? null : request.AvatarUrl.Trim();
+        // Ảnh đại diện chỉ đổi khi client gửi giá trị; bỏ trống = giữ nguyên (không xóa ảnh đã tải lên).
+        if (request.AvatarUrl != null)
+        {
+            var avatar = request.AvatarUrl.Trim();
+            if (avatar.Length > 0 && !IsAcceptableAvatarUrl(avatar))
+            {
+                return ApiResponse<UserProfileDto>.ErrorResponse("Đường dẫn ảnh đại diện không hợp lệ (tối đa 512 ký tự, chỉ http/https hoặc ảnh đã tải lên).");
+            }
+            user.AvatarUrl = avatar.Length == 0 ? null : avatar;
+        }
         user.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);
         _logger.LogInformation("Người dùng {UserId} đã cập nhật thông tin cá nhân.", userId);
 
+        return await GetProfileAsync(userId, ct);
+    }
+
+    /// <summary>Chỉ nhận URL http(s) tuyệt đối hoặc đường dẫn ảnh do chính hệ thống lưu.</summary>
+    public static bool IsAcceptableAvatarUrl(string value)
+    {
+        if (value.Length > 512) return false;
+        if (value.StartsWith("/api/Profile/avatar/", StringComparison.Ordinal)) return true;
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
+    public async Task<ApiResponse<UserProfileDto>> SetAvatarAsync(Guid userId, string? avatarUrl, CancellationToken ct = default)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.DeletedAt == null, ct);
+        if (user == null)
+        {
+            return ApiResponse<UserProfileDto>.ErrorResponse("Không tìm thấy người dùng.");
+        }
+        if (avatarUrl != null && !IsAcceptableAvatarUrl(avatarUrl))
+        {
+            return ApiResponse<UserProfileDto>.ErrorResponse("Đường dẫn ảnh đại diện không hợp lệ.");
+        }
+        user.AvatarUrl = avatarUrl;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(ct);
         return await GetProfileAsync(userId, ct);
     }
 

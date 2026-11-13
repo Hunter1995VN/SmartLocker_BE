@@ -19,6 +19,11 @@ public interface IUserProfileService
     Task<ApiResponse<UserProfileDto>> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default);
 
     /// <summary>
+    /// Đặt (hoặc xóa khi null) đường dẫn ảnh đại diện sau khi file đã được lưu. Không đụng tới các trường khác.
+    /// </summary>
+    Task<ApiResponse<UserProfileDto>> SetAvatarAsync(Guid userId, string? avatarUrl, CancellationToken ct = default);
+
+    /// <summary>
     /// Đổi mật khẩu tài khoản.
     /// </summary>
     Task<ApiResponse<bool>> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default);

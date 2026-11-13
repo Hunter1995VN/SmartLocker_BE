@@ -39,8 +39,7 @@ public class GoogleAuthService : IGoogleAuthService
             }
 
             var content = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogInformation("✅ Google UserInfo response: {Content}", content);
-
+            // Không ghi nội dung phản hồi (chứa email, họ tên) vào log.
             var payload = JsonSerializer.Deserialize<GoogleUserInfoResponse>(content);
 
             if (payload == null || string.IsNullOrEmpty(payload.Email))
@@ -49,12 +48,22 @@ public class GoogleAuthService : IGoogleAuthService
                 return null;
             }
 
+            // Chỉ tin email đã được Google xác minh, tránh chiếm tài khoản bằng email chưa xác minh.
+            if (payload.EmailVerified == false)
+            {
+                _logger.LogWarning("⚠️ Google email chưa được xác minh, từ chối đăng nhập");
+                return null;
+            }
+
+            // Cột AvatarUrl giới hạn 512 ký tự: bỏ ảnh quá dài thay vì làm lỗi cả lần đăng nhập.
+            var picture = payload.Picture is { Length: <= 512 } ? payload.Picture : null;
+
             return new GoogleUserPayload
             {
                 Subject = payload.Sub,
                 Email = payload.Email,
                 Name = payload.Name,
-                Picture = payload.Picture
+                Picture = picture
             };
         }
         catch (Exception ex)
@@ -71,6 +80,9 @@ public class GoogleAuthService : IGoogleAuthService
 
         [System.Text.Json.Serialization.JsonPropertyName("email")]
         public string Email { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("email_verified")]
+        public bool? EmailVerified { get; set; }
 
         [System.Text.Json.Serialization.JsonPropertyName("name")]
         public string? Name { get; set; }

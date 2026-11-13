@@ -218,6 +218,7 @@ public class AuthService
             {
                 UserId = user.Id,
                 FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
                 Email = user.Email,
                 Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
                 Role = user.Role.ToString(),
@@ -268,6 +269,7 @@ public class AuthService
         {
             UserId = user.Id,
             FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
             Email = user.Email,
             Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
             Role = user.Role.ToString(),
@@ -360,6 +362,7 @@ public class AuthService
             {
                 UserId = user.Id,
                 FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
                 Email = user.Email,
                 Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
                 Role = user.Role.ToString(),
@@ -589,6 +592,7 @@ public class AuthService
             {
                 UserId = user.Id,
                 FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
                 Email = user.Email,
                 Phone = user.Phone.StartsWith("00") ? "" : user.Phone,
                 Role = user.Role.ToString(),
