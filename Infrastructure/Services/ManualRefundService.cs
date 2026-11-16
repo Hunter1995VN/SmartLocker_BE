@@ -311,7 +311,7 @@ public class ManualRefundService : IManualRefundService
             .Where(r => r.Status == "PENDING_APPROVAL" || r.Status == "APPROVED_PENDING_PAYOUT")
             .ToList();
 
-        var query = _db.Payments.AsNoTracking()
+        var query = _db.Payments.AsNoTrackingWithIdentityResolution()
             .Include(p => p.Booking)
                 .ThenInclude(b => b.User)
             .Include(p => p.Booking)
