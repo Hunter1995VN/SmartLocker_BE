@@ -10,6 +10,8 @@ public class BookingDto
     public Guid StationId { get; set; }
     public string StationName { get; set; } = string.Empty;
     public string StationAddress { get; set; } = string.Empty;
+    public decimal? StationLatitude { get; set; }
+    public decimal? StationLongitude { get; set; }
     public string? LockerCode { get; set; }
     public string Size { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

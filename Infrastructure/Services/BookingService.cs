@@ -217,6 +217,7 @@ public class BookingService : IBookingService
         var booking = await _context.Bookings
             .Include(b => b.Station)
             .Include(b => b.Locker)
+            .Include(b => b.PricingPolicy)
             .Include(b => b.Payments)
             .Include(b => b.AccessCredential)
             .FirstOrDefaultAsync(b => b.Id == bookingId);
@@ -244,6 +245,7 @@ public class BookingService : IBookingService
                     booking = await _context.Bookings
                         .Include(b => b.Station)
                         .Include(b => b.Locker)
+                        .Include(b => b.PricingPolicy)
                         .Include(b => b.Payments)
                         .Include(b => b.AccessCredential)
                         .FirstOrDefaultAsync(b => b.Id == bookingId) ?? booking;
@@ -262,10 +264,15 @@ public class BookingService : IBookingService
         var dto = MapToBookingDto(booking);
 
         // Calculate derived fields
-        if (booking.IsOverdue && booking.PricingPolicyId != null)
+        var policy = booking.PricingPolicy ?? await _pricingService.GetActivePolicyAsync(booking.StationId, booking.Size);
+        if (policy != null)
         {
-            var policy = await _context.PricingPolicies.FindAsync(booking.PricingPolicyId);
-            if (policy != null) dto.CurrentOverdueFee = _pricingService.CalculateOverdueFee(booking, policy);
+            dto.HourlyRate = policy.PricePerBlock;
+            dto.MaxHours = policy.MaxHours;
+            dto.OverdueFeePerHour = policy.OverdueFeePerHour;
+            dto.GracePeriodMinutes = policy.GracePeriodMinutes;
+            if (booking.IsOverdue)
+                dto.CurrentOverdueFee = _pricingService.CalculateOverdueFee(booking, policy);
         }
 
         if (dto.CanCancel)
@@ -294,6 +301,7 @@ public class BookingService : IBookingService
         var total = await query.CountAsync();
         var entities = await query.OrderByDescending(b => b.CreatedAt)
             .Include(b => b.Locker)
+            .Include(b => b.PricingPolicy)
             .Include(b => b.AccessCredential)
             .Include(b => b.Payments)
             .Skip((page - 1) * pageSize)
@@ -311,7 +319,11 @@ public class BookingService : IBookingService
             {
                 Id = b.Id,
                 BookingCode = b.BookingCode,
+                StationId = b.StationId,
                 StationName = b.Station.Name,
+                StationAddress = b.Station.Address,
+                StationLatitude = b.Station.Latitude,
+                StationLongitude = b.Station.Longitude,
                 Size = b.Size.ToString(),
                 Status = b.Status.ToString(),
                 StartAt = b.StartAt,
@@ -324,7 +336,12 @@ public class BookingService : IBookingService
                     && b.AccessCredential is { IsActive: true, RevokedAt: null }
                     ? OnlineTicket.GetDisplayPin(b.AccessCredential, _pinProtector) : null,
                 BaseAmount = b.BaseAmount,
+                HourlyRate = b.PricingPolicy?.PricePerBlock,
+                MaxHours = b.PricingPolicy?.MaxHours,
+                OverdueFeePerHour = b.PricingPolicy?.OverdueFeePerHour,
                 IsOverdue = b.IsOverdue,
+                CanExtend = b.Status == BookingStatus.STORED,
+                CanCancel = b.Status == BookingStatus.PENDING_PAYMENT || b.Status == BookingStatus.CONFIRMED,
                 CreatedAt = b.CreatedAt
             };
         }).ToList();
@@ -744,9 +761,15 @@ public class BookingService : IBookingService
             BookingCode = booking.BookingCode,
             UserId = booking.UserId,
             StationId = booking.StationId,
-            StationName = booking.Station.Name,
-            StationAddress = booking.Station.Address,
+            StationName = booking.Station?.Name ?? string.Empty,
+            StationAddress = booking.Station?.Address ?? string.Empty,
+            StationLatitude = booking.Station?.Latitude,
+            StationLongitude = booking.Station?.Longitude,
             LockerCode = booking.Locker?.LockerCode,
+            HourlyRate = booking.PricingPolicy?.PricePerBlock,
+            MaxHours = booking.PricingPolicy?.MaxHours,
+            OverdueFeePerHour = booking.PricingPolicy?.OverdueFeePerHour,
+            GracePeriodMinutes = booking.PricingPolicy?.GracePeriodMinutes,
             AccessCode = pin,
             QrPayload = ticketVisible ? booking.AccessCredential?.QrPayload : null,
             OfflineHmacToken = hmacToken,
