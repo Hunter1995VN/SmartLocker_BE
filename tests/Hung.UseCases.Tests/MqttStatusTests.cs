@@ -17,6 +17,13 @@ public class MqttStatusTests
         Username = "smartlocker-api", Password = "secret-value-should-not-leak", ReconnectDelaySeconds = 1,
     };
 
+    private sealed class TestOptionsMonitor<T>(T value) : IOptionsMonitor<T>
+    {
+        public T CurrentValue => value;
+        public T Get(string? name) => value;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
+
     [Fact]
     public void Snapshot_reports_configuration_without_credentials()
     {
@@ -33,7 +40,7 @@ public class MqttStatusTests
     public async Task Disabled_subscriber_reports_disabled()
     {
         var status = new MqttConnectionStatus();
-        var service = new MqttSubscriberService(Microsoft.Extensions.Options.Options.Create(Options(8883, enabled: false)),
+        var service = new MqttSubscriberService(new TestOptionsMonitor<MqttOptions>(Options(8883, enabled: false)),
             NullLogger<MqttSubscriberService>.Instance, new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), status);
 
         await service.StartAsync(CancellationToken.None);
@@ -52,7 +59,7 @@ public class MqttStatusTests
         probe.Stop();
 
         var status = new MqttConnectionStatus();
-        var service = new MqttSubscriberService(Microsoft.Extensions.Options.Options.Create(Options(closedPort)),
+        var service = new MqttSubscriberService(new TestOptionsMonitor<MqttOptions>(Options(closedPort)),
             NullLogger<MqttSubscriberService>.Instance, new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), status);
 
         await service.StartAsync(CancellationToken.None);
