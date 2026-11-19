@@ -158,7 +158,6 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
     private async Task<ChatSupportResponse> CallGeminiAsync(ChatSupportRequest request, CancellationToken cancellationToken)
     {
         var apiKey = ResolveGeminiKey();
-        var model = _config["Gemini:Model"] ?? "gemini-3.8-flash";
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -166,79 +165,92 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
             return GetFallbackResponse("Hệ thống trợ lý AI hiện đang được bảo trì cấu hình. Quý khách vui lòng liên hệ Hotline 1900 8888 để được hỗ trợ tức thì.");
         }
 
-        try
+        var candidateModels = new List<string>();
+        var configuredModel = _config["Gemini:Model"];
+        if (!string.IsNullOrWhiteSpace(configuredModel))
         {
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+            candidateModels.Add(configuredModel);
+        }
+        var defaultFallbacks = new[] { "gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash" };
+        foreach (var fb in defaultFallbacks)
+        {
+            if (!candidateModels.Contains(fb)) candidateModels.Add(fb);
+        }
 
-            var contents = new List<object>();
+        var contents = new List<object>();
 
-            if (request.History != null && request.History.Count > 0)
+        if (request.History != null && request.History.Count > 0)
+        {
+            var recentHistory = request.History.TakeLast(10);
+            foreach (var item in recentHistory)
             {
-                var recentHistory = request.History.TakeLast(10);
-                foreach (var item in recentHistory)
+                if (string.IsNullOrWhiteSpace(item.Content)) continue;
+
+                var role = item.Role?.ToLowerInvariant() == "model" || item.Role?.ToLowerInvariant() == "assistant"
+                    ? "model"
+                    : "user";
+
+                contents.Add(new
                 {
-                    if (string.IsNullOrWhiteSpace(item.Content)) continue;
+                    role = role,
+                    parts = new[] { new { text = item.Content } }
+                });
+            }
+        }
 
-                    var role = item.Role?.ToLowerInvariant() == "model" || item.Role?.ToLowerInvariant() == "assistant"
-                        ? "model"
-                        : "user";
+        contents.Add(new
+        {
+            role = "user",
+            parts = new[] { new { text = request.Message } }
+        });
 
-                    contents.Add(new
+        var payload = new
+        {
+            system_instruction = new
+            {
+                parts = new[] { new { text = SystemPrompt } }
+            },
+            contents = contents,
+            generationConfig = new
+            {
+                temperature = 0.7,
+                maxOutputTokens = 1200
+            }
+        };
+
+        foreach (var model in candidateModels)
+        {
+            try
+            {
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                var response = await _httpClient.PostAsJsonAsync(url, payload, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogWarning("Gemini model {Model} returned {StatusCode}: {ErrorBody}. Trying next candidate model...", model, response.StatusCode, errorBody);
+                    continue;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<GeminiApiResponse>(cancellationToken: cancellationToken);
+                var replyText = result?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text;
+
+                if (!string.IsNullOrWhiteSpace(replyText))
+                {
+                    return new ChatSupportResponse
                     {
-                        role = role,
-                        parts = new[] { new { text = item.Content } }
-                    });
+                        Reply = replyText.Trim(),
+                        SuggestedQuestions = GenerateSuggestedQuestions(request.Message, replyText)
+                    };
                 }
             }
-
-            contents.Add(new
+            catch (Exception ex)
             {
-                role = "user",
-                parts = new[] { new { text = request.Message } }
-            });
-
-            var payload = new
-            {
-                system_instruction = new
-                {
-                    parts = new[] { new { text = SystemPrompt } }
-                },
-                contents = contents,
-                generationConfig = new
-                {
-                    temperature = 0.7,
-                    maxOutputTokens = 1200
-                }
-            };
-
-            var response = await _httpClient.PostAsJsonAsync(url, payload, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("Gemini API call failed with status {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
-                return GetFallbackResponse("Dạ hiện tại đường truyền kết nối AI đang bận (Google API 503/quá tải). Anh/chị có thể liên hệ ngay Hotline 1900 8888 hoặc chọn các câu hỏi thường gặp bên dưới để em hỗ trợ nhé!");
+                _logger.LogWarning(ex, "Error calling Gemini model {Model}. Trying next...", model);
             }
-
-            var result = await response.Content.ReadFromJsonAsync<GeminiApiResponse>(cancellationToken: cancellationToken);
-            var replyText = result?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text;
-
-            if (string.IsNullOrWhiteSpace(replyText))
-            {
-                return GetFallbackResponse("Dạ em đã nhận được yêu cầu của anh/chị, nhưng chưa thể tạo câu trả lời chi tiết ngay lúc này. Anh/chị vui lòng thử lại hoặc gọi Hotline 1900 8888 nhé!");
-            }
-
-            return new ChatSupportResponse
-            {
-                Reply = replyText.Trim(),
-                SuggestedQuestions = GenerateSuggestedQuestions(request.Message, replyText)
-            };
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error while processing Gemini Chat Support message");
-            return GetFallbackResponse("Dạ hệ thống gặp gián đoạn tạm thời. Quý khách vui lòng thử lại sau giây lát hoặc liên hệ Hotline 1900 8888 để được hỗ trợ ngay ạ.");
-        }
+
+        return GetFallbackResponse("Dạ hiện tại đường truyền kết nối AI đang bận. Anh/chị có thể liên hệ ngay Hotline 1900 8888 hoặc chọn các câu hỏi thường gặp bên dưới để em hỗ trợ nhé!");
     }
 
     private string ResolveGrokKey()
