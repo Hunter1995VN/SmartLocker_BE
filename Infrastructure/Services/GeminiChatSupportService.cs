@@ -79,7 +79,85 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
 
     public async Task<ChatSupportResponse> SendMessageAsync(ChatSupportRequest request, CancellationToken cancellationToken = default)
     {
-        var apiKey = ResolveApiKey();
+        // 1. Kiểm tra xem có cấu hình Grok (xAI) không
+        var grokKey = ResolveGrokKey();
+        if (!string.IsNullOrWhiteSpace(grokKey) && (grokKey.StartsWith("xai-") || _config["AiProvider"] == "Grok"))
+        {
+            return await CallGrokAsync(grokKey, request, cancellationToken);
+        }
+
+        // 2. Mặc định gọi Google Gemini
+        return await CallGeminiAsync(request, cancellationToken);
+    }
+
+    private async Task<ChatSupportResponse> CallGrokAsync(string apiKey, ChatSupportRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = _config["Grok:Model"] ?? "grok-2-latest";
+            var url = "https://api.x.ai/v1/chat/completions";
+
+            var messages = new List<object>
+            {
+                new { role = "system", content = SystemPrompt }
+            };
+
+            if (request.History != null && request.History.Count > 0)
+            {
+                foreach (var item in request.History.TakeLast(10))
+                {
+                    if (string.IsNullOrWhiteSpace(item.Content)) continue;
+                    var role = item.Role?.ToLowerInvariant() == "user" ? "user" : "assistant";
+                    messages.Add(new { role, content = item.Content });
+                }
+            }
+
+            messages.Add(new { role = "user", content = request.Message });
+
+            var payload = new
+            {
+                model = model,
+                messages = messages,
+                temperature = 0.7,
+                max_tokens = 1200
+            };
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            req.Content = JsonContent.Create(payload);
+
+            var response = await _httpClient.SendAsync(req, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var err = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Grok API call failed with status {StatusCode}: {ErrorBody}", response.StatusCode, err);
+                return GetFallbackResponse("Dạ hiện tại đường truyền kết nối AI đang bận. Anh/chị có thể liên hệ ngay Hotline 1900 8888 để được hỗ trợ nhé!");
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<GrokApiResponse>(cancellationToken: cancellationToken);
+            var replyText = result?.Choices?.FirstOrDefault()?.Message?.Content;
+
+            if (string.IsNullOrWhiteSpace(replyText))
+            {
+                return GetFallbackResponse("Dạ em đã nhận được yêu cầu của anh/chị, nhưng chưa thể tạo câu trả lời chi tiết ngay lúc này. Anh/chị vui lòng thử lại hoặc gọi Hotline 1900 8888 nhé!");
+            }
+
+            return new ChatSupportResponse
+            {
+                Reply = replyText.Trim(),
+                SuggestedQuestions = GenerateSuggestedQuestions(request.Message, replyText)
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while calling Grok API");
+            return GetFallbackResponse("Dạ hệ thống gặp gián đoạn tạm thời. Quý khách vui lòng liên hệ Hotline 1900 8888 để được hỗ trợ ngay ạ.");
+        }
+    }
+
+    private async Task<ChatSupportResponse> CallGeminiAsync(ChatSupportRequest request, CancellationToken cancellationToken)
+    {
+        var apiKey = ResolveGeminiKey();
         var model = _config["Gemini:Model"] ?? "gemini-3.8-flash";
 
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -92,7 +170,6 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
         {
             var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
-            // Chuẩn bị danh sách contents bao gồm lịch sử trò chuyện (tối đa 10 lượt gần nhất)
             var contents = new List<object>();
 
             if (request.History != null && request.History.Count > 0)
@@ -114,7 +191,6 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
                 }
             }
 
-            // Thêm tin nhắn hiện tại của user
             contents.Add(new
             {
                 role = "user",
@@ -141,7 +217,7 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogError("Gemini API call failed with status {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
-                return GetFallbackResponse("Dạ hiện tại đường truyền kết nối AI đang bận. Anh/chị có thể liên hệ ngay Hotline 1900 8888 hoặc chọn các câu hỏi thường gặp bên dưới để em hỗ trợ nhé!");
+                return GetFallbackResponse("Dạ hiện tại đường truyền kết nối AI đang bận (Google API 503/quá tải). Anh/chị có thể liên hệ ngay Hotline 1900 8888 hoặc chọn các câu hỏi thường gặp bên dưới để em hỗ trợ nhé!");
             }
 
             var result = await response.Content.ReadFromJsonAsync<GeminiApiResponse>(cancellationToken: cancellationToken);
@@ -165,7 +241,16 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
         }
     }
 
-    private string ResolveApiKey()
+    private string ResolveGrokKey()
+    {
+        return _config["Grok:ApiKey"] 
+            ?? _config["XAI_API_KEY"] 
+            ?? Environment.GetEnvironmentVariable("XAI_API_KEY") 
+            ?? Environment.GetEnvironmentVariable("Grok__ApiKey")
+            ?? string.Empty;
+    }
+
+    private string ResolveGeminiKey()
     {
         var key = _config["Gemini:ApiKey"];
         if (!string.IsNullOrWhiteSpace(key)) return key;
@@ -175,7 +260,6 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
             ?? Environment.GetEnvironmentVariable("Gemini__ApiKey");
         if (!string.IsNullOrWhiteSpace(key)) return key;
 
-        // Fallback decoded token
         try
         {
             const string encodedDefault = "QVEuQWI4Uk42SUIwMHQxZDk2TEE1UjZxb3BlYVdNeHpMcjJTN3BZc0hrTEFTTExxTllfWnc=";
@@ -236,6 +320,26 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
         return suggestions;
     }
 
+    // DTOs cho xAI Grok
+    private class GrokApiResponse
+    {
+        [JsonPropertyName("choices")]
+        public List<GrokChoice>? Choices { get; set; }
+    }
+
+    private class GrokChoice
+    {
+        [JsonPropertyName("message")]
+        public GrokMessage? Message { get; set; }
+    }
+
+    private class GrokMessage
+    {
+        [JsonPropertyName("content")]
+        public string? Content { get; set; }
+    }
+
+    // DTOs cho Google Gemini
     private class GeminiApiResponse
     {
         [JsonPropertyName("candidates")]
