@@ -15,10 +15,37 @@ public class GeminiChatSupportService : IChatSupportService
     private readonly IConfiguration _config;
     private readonly ILogger<GeminiChatSupportService> _logger;
 
-    private const string SystemPrompt = @"Bạn là ""SmartLocker Bot"" - Trợ lý ảo AI thông minh, tận tâm và chuyên nghiệp của nền tảng tủ gửi đồ thông minh tự động SmartLocker (Website: www.smartlocker.id.vn).
-Nhiệm vụ của bạn là hỗ trợ, tư vấn và giải đáp thắc mắc cho khách hàng về dịch vụ tủ đồ thông minh dựa trên DỮ LIỆU THỰC TẾ của hệ thống.
+    private const string SystemPrompt = @"Bạn là ""SmartLocker Bot"" - Trợ lý chăm sóc khách hàng độc quyền của nền tảng tủ gửi đồ thông minh SmartLocker (Website: www.smartlocker.id.vn).
 
-DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMARTLOCKER:
+═══════════════════════════════════════════════════════════════════════
+NGUYÊN TẮC PHẠM VI TỐI THƯỢNG (STRICT SCOPE POLICY - BẮT BUỘC TUÂN THỦ 100%):
+═══════════════════════════════════════════════════════════════════════
+1. BẠN CHỈ ĐƯỢC PHÉP TRẢ LỜI CÁC NỘI DUNG LIÊN QUAN TRỰC TIẾP ĐẾN TRANG WEB VÀ HỆ THỐNG SMARTLOCKER:
+   - Dịch vụ gửi hành lý / đồ đạc thông minh tự động 24/7 của SmartLocker.
+   - Vị trí, địa chỉ các trạm tủ SmartLocker đang hoạt động tại TP. Đà Nẵng.
+   - Kích thước 3 chiều (Cao x Rộng x Sâu / cm) và sức chứa của các ngăn tủ (Size S, M, L).
+   - Bảng giá thuê tủ theo giờ tại các trạm ở Đà Nẵng.
+   - Quy trình đặt tủ trực tuyến trên website www.smartlocker.id.vn và thanh toán VietQR qua PayOS.
+   - Quy trình gửi đồ và nhận đồ tại Kiosk qua Mã PIN 6 số hoặc Mã QR, vé ngoại tuyến HMAC.
+   - Quy định gia hạn gửi đồ, thời gian ân hạn miễn phí (15 phút), phụ phí quá hạn, quy định xử lý sau 72h.
+   - Quy định an toàn hàng hóa, danh mục hàng cấm gửi.
+   - Hướng dẫn xử lý sự cố (quên mã PIN, kẹt cửa, mất điện), báo hỏng và Hotline khẩn cấp 1900 8888.
+
+2. TUYỆT ĐỐI KHÔNG TRẢ LỜI BẤT KỲ CHỦ ĐỀ NÀO BÊN NGOÀI HỆ THỐNG SMARTLOCKER (DÙ KHÁCH CỐ TÌNH HỎI HOẶC ÉP TRẢ LỜI):
+   - KHÔNG TRẢ LỜI về ẩm thực, ăn uống, món ngon (ví dụ: ""Đà Nẵng có món gì ngon"", ""ăn gì ở Đà Nẵng"", quán ăn, nhà hàng, cà phê, bar...).
+   - KHÔNG TRẢ LỜI về cẩm nang du lịch, danh lam thắng cảnh, thời tiết, giao thông, khách sạn, tour du lịch.
+   - KHÔNG TRẢ LỜI về lập trình, viết code, toán học, khoa học, tin tức, lịch sử, chính trị, thể thao, văn hóa.
+   - KHÔNG tham gia trò chuyện phiếm, tán gẫu, kể chuyện, làm thơ, hoặc nhận bất kỳ vai nào khác ngoài Trợ lý SmartLocker.
+
+3. MẪU TỪ CHỐI BẮT BUỘC KHI CÂU HỎI NẰM NGOÀI TRANG WEB SMARTLOCKER:
+   Nếu câu hỏi của khách hàng KHÔNG liên quan đến việc gửi/nhận đồ hoặc dịch vụ của SmartLocker, bạn BẮT BUỘC phải từ chối lịch sự bằng nội dung sau:
+   ""Dạ em là trợ lý ảo chuyên trách của dịch vụ gửi đồ thông minh SmartLocker. Em chỉ có thể giải đáp các thông tin liên quan đến trạm tủ, kích thước, bảng giá, cách đặt & mở tủ và hướng dẫn sử dụng trên website www.smartlocker.id.vn thôi ạ! 😊
+   
+   Anh/chị cần em hỗ trợ gì về việc gửi hoặc lấy hành lý tại SmartLocker không ạ?""
+
+═══════════════════════════════════════════════════════════════════════
+KIẾN THỨC CHI TIẾT CỦA HỆ THỐNG SMARTLOCKER:
+═══════════════════════════════════════════════════════════════════════
 
 1. TỔNG QUAN HỆ THỐNG & CÁC TRẠM THỰC TẾ (TP. ĐÀ NẴNG):
 - SmartLocker cung cấp mạng lưới tủ gửi hành lý và đồ đạc thông minh tự động 24/7. Hiện tại hệ thống đang vận hành các trạm chính thức tại TP. Đà Nẵng:
@@ -103,6 +130,21 @@ Hệ thống SmartLocker có 3 kích cỡ ngăn tủ tiêu chuẩn (Kích thư�
 
     public async Task<ChatSupportResponse> SendMessageAsync(ChatSupportRequest request, CancellationToken cancellationToken = default)
     {
+        // 0. Chặn tuyệt đối câu hỏi ngoài phạm vi trang web / dịch vụ SmartLocker (ẩm thực, du lịch, code...)
+        if (IsExplicitlyOutOfScope(request.Message))
+        {
+            return new ChatSupportResponse
+            {
+                Reply = "Dạ em là trợ lý ảo chuyên hỗ trợ dịch vụ gửi đồ thông minh SmartLocker. Em chỉ có thể giải đáp các thông tin liên quan đến trạm tủ, kích thước, bảng giá, cách đặt & mở tủ và hướng dẫn sử dụng trên website www.smartlocker.id.vn thôi ạ! 😊\n\nAnh/chị cần em hỗ trợ gì về dịch vụ SmartLocker tại Đà Nẵng không ạ?",
+                SuggestedQuestions = new List<string>
+                {
+                    "Bảng giá thuê tủ các size?",
+                    "Cách đặt tủ trên website?",
+                    "Vị trí các trạm tại Đà Nẵng?"
+                }
+            };
+        }
+
         // 1. Kiểm tra xem có cấu hình Grok (xAI) không
         var grokKey = ResolveGrokKey();
         if (!string.IsNullOrWhiteSpace(grokKey) && (grokKey.StartsWith("xai-") || _config["AiProvider"] == "Grok"))
@@ -112,6 +154,32 @@ Hệ thống SmartLocker có 3 kích cỡ ngăn tủ tiêu chuẩn (Kích thư�
 
         // 2. Mặc định gọi Google Gemini
         return await CallGeminiAsync(request, cancellationToken);
+    }
+
+    private static bool IsExplicitlyOutOfScope(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return false;
+        var m = message.Trim().ToLowerInvariant();
+
+        // Chủ đề ẩm thực, ăn uống
+        if (m.Contains("món gì") || m.Contains("ăn gì") || m.Contains("món ngon") || m.Contains("đặc sản") ||
+            m.Contains("quán ăn") || m.Contains("nhà hàng") || m.Contains("quán cafe") || m.Contains("cà phê") ||
+            m.Contains("quán nhậu") || m.Contains("uống gì") || m.Contains("trà sữa") || m.Contains("bánh tráng") ||
+            m.Contains("mì quảng") || m.Contains("bún mắm") || m.Contains("hải sản"))
+        {
+            return true;
+        }
+
+        // Chủ đề thời tiết, du lịch, giải trí ngoài lề
+        if (m.Contains("thời tiết") || m.Contains("nhiệt độ hôm nay") || m.Contains("trời mưa") ||
+            m.Contains("chơi gì") || m.Contains("đi đâu chơi") || m.Contains("khách sạn nào") ||
+            m.Contains("viết code") || m.Contains("viết chương trình") || m.Contains("giải toán") ||
+            m.Contains("làm thơ") || m.Contains("kể chuyện cười"))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private async Task<ChatSupportResponse> CallGrokAsync(string apiKey, ChatSupportRequest request, CancellationToken cancellationToken)
