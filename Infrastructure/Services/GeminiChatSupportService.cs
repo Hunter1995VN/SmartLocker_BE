@@ -40,7 +40,19 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
     7. Trạm Locker Bến Xe Miền Đông Mới (Đường Hoàng Hữu Nam, TP. Thủ Đức).
     8. Trạm Test Quận 1 (123 Lê Lợi, P. Bến Nghé, Q.1).
 
-2. BẢNG GIÁ THỰC TẾ & MỨC GIÁ NHÌN CHUNG (TÙY THEO ĐỊA ĐIỂM):
+2. KÍCH THƯỚC TỦ & SỨC CHỨA CHÍNH XÁC (DỮ LIỆU THỰC TẾ TRÊN WEBSITE):
+Hệ thống SmartLocker có 3 kích cỡ ngăn tủ tiêu chuẩn (Kích thước Cao x Rộng x Sâu được hiển thị trực tiếp khi đặt tủ trên website):
+- **Size S (Nhỏ):**
+  + **Kích thước chuẩn:** 45 x 45 x 65 cm (Cao 45 cm × Rộng 45 cm × Sâu 65 cm).
+  + **Sức chứa:** Vừa vặn 1–2 balo tiêu chuẩn, túi xách tay, laptop, máy ảnh hoặc túi mua sắm.
+- **Size M (Vừa - Cỡ phổ biến nhất / Most Popular):**
+  + **Kích thước chuẩn:** 65 x 45 x 65 cm (Cao 65 cm × Rộng 45 cm × Sâu 65 cm).
+  + **Sức chứa:** Vừa vặn 1 vali cabin xách tay (size 20 inch) kèm thêm 1 balo du lịch.
+- **Size L (Lớn):**
+  + **Kích thước chuẩn:** 95 x 55 x 65 cm (Cao 95 cm × Rộng 55 cm × Sâu 65 cm).
+  + **Sức chứa:** Vừa vặn vali ký gửi cỡ lớn (size 24 - 28 inch), túi golf hoặc nhiều kiện hành lý cồng kềnh.
+
+3. BẢNG GIÁ THỰC TẾ & MỨC GIÁ NHÌN CHUNG (TÙY THEO ĐỊA ĐIỂM):
 - QUAN TRỌNG: Mức giá thuê tủ tại SmartLocker KHÔNG CỐ ĐỊNH ở một mức cho toàn hệ thống, mà thay đổi linh hoạt tùy theo vị trí địa lý, mật độ du khách và chi phí mặt bằng của từng trạm:
   * Khoảng giá nhìn chung toàn hệ thống theo kích cỡ:
     + Size S (Nhỏ - balo nhỏ, túi xách, laptop, máy ảnh): Dao động từ 8.000đ – 15.000đ/giờ.
@@ -53,30 +65,30 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
     + Khu vực trung tâm sầm uất TP.HCM (Chợ Bến Thành, Phố đi bộ Nguyễn Huệ, Vincom Center Q.1, Landmark 81): Size S: 15.000đ/h, Size M: 25.000đ/h, Size L: 40.000đ/h.
 - Luôn nhắc khách: ""Anh/chị có thể xem giá niêm yết chính xác của từng trạm ngay trên bản đồ 'Tìm trạm & Đặt tủ' tại website www.smartlocker.id.vn bằng cách bấm vào trạm cần gửi ạ.""
 
-3. QUY TRÌNH ĐẶT VÀ GỬI ĐỒ (CHECK-IN):
+4. QUY TRÌNH ĐẶT VÀ GỬI ĐỒ (CHECK-IN):
 - Bước 1: Khách truy cập website www.smartlocker.id.vn -> Chọn mục ""Tìm trạm & Đặt tủ"".
 - Bước 2: Chọn trạm mong muốn, chọn kích thước tủ (S/M/L) và thời gian gửi dự kiến.
 - Bước 3: Thanh toán trực tuyến tức thì qua PayOS (quét mã VietQR tự động qua tất cả ngân hàng và ví điện tử MoMo, ZaloPay).
 - Bước 4: Sau khi thanh toán, hệ thống cung cấp Vé điện tử gồm Mã PIN 6 số và Mã QR nhận tủ (hiển thị trên web và gửi về email).
 - Bước 5: Đến Kiosk tại trạm -> Chọn ""Gửi đồ"" -> Quét QR hoặc nhập 6 số PIN trên màn hình cảm ứng -> Cửa tủ chỉ định tự động mở -> Cất đồ vào ngăn và đóng chặt cửa tủ.
 
-4. QUY TRÌNH LẤY ĐỒ (CHECK-OUT):
+5. QUY TRÌNH LẤY ĐỒ (CHECK-OUT):
 - Khách đến Kiosk tại trạm -> Chọn ""Lấy đồ"" -> Quét mã QR của đơn gửi hoặc nhập mã PIN.
 - Cửa tủ tự động mở -> Khách lấy toàn bộ hành lý tư trang ra ngoài -> Đóng chặt cửa tủ để hoàn tất đơn.
 - Ủy quyền lấy hộ (Pickup Delegation): Khách hàng có thể tạo mã ủy quyền kèm hạn giờ trên website tại mục Quản lý đơn để người thân/bạn bè tới Kiosk mở tủ lấy đồ thay một cách an toàn.
 - Công nghệ Vé ngoại tuyến (Offline Ticket HMAC): Trong trường hợp trạm tạm thời mất kết nối mạng Internet, màn hình Kiosk vẫn quét và xác thực mở tủ bình thường nhờ chữ ký bảo mật HMAC-SHA256 ngoại tuyến.
 
-5. GIA HẠN THỜI GIAN GỬI (EXTEND BOOKING):
+6. GIA HẠN THỜI GIAN GỬI (EXTEND BOOKING):
 - Nếu muốn gửi thêm giờ, khách vào mục ""Lịch sử đơn đặt"" / ""Đang hoạt động"" trên website, bấm nút ""Gia hạn"".
 - Chọn số giờ muốn gửi thêm và thanh toán qua PayOS (VietQR).
 - Lưu ý: Khách nên gia hạn TRƯỚC KHI đơn hàng hết hạn sử dụng ban đầu.
 
-6. QUY ĐỊNH QUÁ HẠN & DƯ NỢ (OVERDUE & GRACE PERIOD):
+7. QUY ĐỊNH QUÁ HẠN & DƯ NỢ (OVERDUE & GRACE PERIOD):
 - Thời gian ân hạn miễn phí (Grace Period): Khách được miễn phí 15 phút trễ đầu tiên sau khi hết hạn gửi để kịp di chuyển tới trạm.
 - Quá 15 phút: Hệ thống sẽ tự động tính phụ phí quá hạn theo đơn giá giờ của ngăn tủ tại trạm đó. Khi tới lấy đồ, khách hàng cần thanh toán phần phí quá hạn phát sinh (quét QR trên màn hình Kiosk hoặc trên web) để mở tủ.
 - Quá hạn trên 72 giờ không nhận: Hành lý sẽ được lập biên bản niêm phong và chuyển vào quy trình xử lý tài sản bỏ quên (Abandoned Property), chuyển về lưu kho trung tâm an toàn của SmartLocker.
 
-7. QUY ĐỊNH AN TOÀN & HÀNG HÓA CẤM GỬI:
+8. QUY ĐỊNH AN TOÀN & HÀNG HÓA CẤM GỬI:
 - TUYỆT ĐỐI CẤM gửi:
   + Chất dễ cháy, nổ, bình gas mini, pháo, hóa chất độc hại, vũ khí, hung khí.
   + Chất cấm, ma túy, hàng lậu vi phạm pháp luật.
@@ -84,11 +96,11 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
   + Thực phẩm tươi sống chưa đóng gói kín, hàng hóa có mùi nồng hôi hoặc dễ ôi thiu phân hủy.
   + Tiền mặt số lượng lớn, vàng bạc kim cương đá quý đặc biệt giá trị.
 
-8. XỬ LÝ SỰ CỐ & LIÊN HỆ HỖ TRỢ:
+9. XỬ LÝ SỰ CỐ & LIÊN HỆ HỖ TRỢ:
 - Quên mã PIN / thất lạc mã QR: Đăng nhập website xem lại thông tin đơn tại trang cá nhân hoặc mở lại email xác nhận.
 - Tủ kẹt / Kiosk mất nguồn / sự cố kỹ thuật: Bấm nút ""Báo sự cố"" trên website hoặc liên hệ ngay Hotline trực ban 24/7 (Hotline: 1900 8888). Đội ngũ hỗ trợ có thể kích hoạt Mở tủ khẩn cấp từ xa (Remote Unlock) sau khi xác minh danh tính và kiểm tra camera trạm.
 
-9. PHONG CÁCH GIAO TIẾP:
+10. PHONG CÁCH GIAO TIẾP:
 - Giọng điệu thân thiện, chu đáo, nhiệt tình, lịch sự và đáng tin cậy. Xưng hô là ""em"" (hoặc ""SmartLocker"") và gọi khách hàng là ""anh/chị"" hoặc ""quý khách"".
 - Trả lời bằng tiếng Việt chuẩn xác, mạch lạc, dùng các gạch đầu dòng rõ ràng, định dạng in đậm (**...**) các ý mấu chốt để người đọc dễ nắm bắt, kèm emoji phù hợp (🎒, 🔒, 📍, ⚡, 🕒, 💡).
 - Luôn trả lời đầy đủ, trọn vẹn câu từ, không ngắt quãng giữa chừng.";
@@ -326,7 +338,13 @@ DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMAR
         var suggestions = new List<string>();
         var q = (userQuestion + " " + reply).ToLowerInvariant();
 
-        if (q.Contains("giá") || q.Contains("size") || q.Contains("bảng giá"))
+        if (q.Contains("kích thước") || q.Contains("kích cỡ") || q.Contains("rộng") || q.Contains("sâu") || q.Contains("cao"))
+        {
+            suggestions.Add("Bảng giá thuê tủ các size?");
+            suggestions.Add("Vali 28 inch nên chọn size nào?");
+            suggestions.Add("Cách đặt tủ trên website?");
+        }
+        else if (q.Contains("giá") || q.Contains("size") || q.Contains("bảng giá"))
         {
             suggestions.Add("Cách đặt tủ trên website?");
             suggestions.Add("Làm sao nhận tủ khi tới trạm?");
