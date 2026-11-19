@@ -278,12 +278,13 @@ void telemetryTask(void*) {
       Serial.println("\n[SELF-TEST] Starting hardware self-test routine...");
       uint32_t testStart = millis();
 
+      // Kích tuần tự từng rơ-le S -> M -> L (điều khiển trực tiếp, không bị xung đột activeLock)
       for (int i = 0; i < 3; i++) {
-        Serial.printf("[SELF-TEST] Cycling relay %s...\n", LOCKER_CODES[i]);
-        if (unlockCb) {
-          unlockCb(i);
-        }
-        vTaskDelay(pdMS_TO_TICKS(350));
+        Serial.printf("[SELF-TEST] Cycling relay %s (GPIO %d)...\n", LOCKER_CODES[i], RELAY_PINS[i]);
+        writeRelay(i, true);
+        vTaskDelay(pdMS_TO_TICKS(300));
+        writeRelay(i, false);
+        vTaskDelay(pdMS_TO_TICKS(200));
       }
 
       uint32_t duration = millis() - testStart;
