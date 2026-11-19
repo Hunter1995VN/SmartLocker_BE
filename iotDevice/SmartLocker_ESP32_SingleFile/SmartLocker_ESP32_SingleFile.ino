@@ -76,6 +76,7 @@ volatile bool rebootRequested = false;
 // Khai báo hàm nguyên mẫu
 void startUnlock(int index);
 void updateMqttDoor(int index, bool closed);
+void writeRelay(int index, bool turnOn);
 
 // ------------------------------------------------------------------------------
 // 4. TIỆN ÍCH PHÂN TÍCH JSON ĐƠN GIẢN
