@@ -61,6 +61,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancialReportService, FinancialReportService>();
         services.AddScoped<IOccupancyAnalyticsService, OccupancyAnalyticsService>();
         services.AddScoped<IOfflineTicketService, OfflineTicketService>();
+        services.AddHttpClient<IChatSupportService, GeminiChatSupportService>();
 
         return services;
     }
