@@ -891,6 +891,7 @@ public class AdminStationLockerService : IAdminStationLockerService
                 DoorState = l.DoorState,
                 LastDoorEventAt = l.LastDoorEventAt,
                 GpioPin = l.GpioPin,
+                SensorGpioPin = l.Size == LockerSize.S ? (short)27 : l.Size == LockerSize.M ? (short)32 : (short)23,
                 HealthStatus = l.HealthStatus.ToString(),
                 DeviceCode = deviceCode
             })

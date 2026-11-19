@@ -2,9 +2,10 @@ using System.Text.Json;
 using Application.Interfaces;
 using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 namespace Infrastructure.Mqtt;
 
-public sealed class HeartbeatEventHandler(ISmartLockerDbContext db, ILockerNotificationService notifications)
+public sealed class HeartbeatEventHandler(ISmartLockerDbContext db, ILockerNotificationService notifications, ILogger<HeartbeatEventHandler>? logger = null)
 {
     public async Task HandleAsync(string topic, string payload, bool retained, CancellationToken ct)
     {
@@ -47,10 +48,18 @@ public sealed class HeartbeatEventHandler(ISmartLockerDbContext db, ILockerNotif
             // This firmware identifies one physical bay per size; never choose among duplicates.
             if (group.Count() != 1 || !doors.TryGetValue(group.Key, out var state)) continue;
             var locker = group.Single();
-            if (state != "CLOSED" || activeLockerIds.Contains(locker.Id) || locker.BusinessStatus != LockerBusinessStatus.AVAILABLE || locker.DoorState == state) continue;
+            if (activeLockerIds.Contains(locker.Id) || locker.BusinessStatus != LockerBusinessStatus.AVAILABLE || locker.DoorState == state) continue;
             locker.DoorState = state;
             locker.UpdatedAt = now;
             snapshotsChanged = true;
+            try
+            {
+                await notifications.NotifyDoorStatusChangedAsync(locker.StationId, locker.Id, locker.LockerCode, state, new DateTimeOffset(now));
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to broadcast snapshot door status for {LockerCode}", locker.LockerCode);
+            }
         }
         await db.SaveChangesAsync(ct);
         if (changed || snapshotsChanged)

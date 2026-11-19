@@ -68,15 +68,6 @@ public sealed class DoorEventHandler(
             .OrderByDescending(b => b.CreatedAt)
             .FirstOrDefault(b => b.Status == BookingStatus.CONFIRMED || b.Status == BookingStatus.STORED);
 
-        // Do not flip an idle AVAILABLE locker to OPEN on ESP32 boot/reconnect when no active check-in/out is in progress
-        if (message.DoorState == "OPEN" && activeBooking == null && locker.BusinessStatus == LockerBusinessStatus.AVAILABLE)
-        {
-            locker.LastDoorEventAt = timestamp;
-            locker.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            return;
-        }
-
         var previousDoorState = locker.DoorState;
         var previousDoorAt = locker.LastDoorEventAt;
         locker.DoorState = message.DoorState;

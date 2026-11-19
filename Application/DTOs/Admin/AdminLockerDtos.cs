@@ -88,6 +88,7 @@ public class DoorTelemetryItemDto
     public string DoorState { get; set; } = "CLOSED";
     public DateTime? LastDoorEventAt { get; set; }
     public short? GpioPin { get; set; }
+    public short? SensorGpioPin { get; set; }
     public string HealthStatus { get; set; } = "HEALTHY";
     public string DeviceCode { get; set; } = string.Empty;
 }

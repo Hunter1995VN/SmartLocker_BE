@@ -44,8 +44,9 @@ public class AdminDashboardService : IAdminDashboardService
         var totalActiveBookings = await _db.Bookings.AsNoTracking()
             .CountAsync(b => activeStatuses.Contains(b.Status));
 
+        var cutoff = DateTime.UtcNow.AddMinutes(-2);
         var offlineIoT = await _db.IoTDevices.AsNoTracking()
-            .CountAsync(d => d.ConnectivityStatus == "OFFLINE" || d.ConnectivityStatus == "DEGRADED");
+            .CountAsync(d => d.ConnectivityStatus == "OFFLINE" || d.ConnectivityStatus == "DEGRADED" || d.LastSeenAt == null || d.LastSeenAt < cutoff);
 
         var openIncidents = await _db.SecurityIncidents.AsNoTracking()
             .CountAsync(i => i.Status == IncidentStatus.OPEN || i.Status == IncidentStatus.IN_PROGRESS);
