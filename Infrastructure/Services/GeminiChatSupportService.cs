@@ -20,25 +20,15 @@ Nhiệm vụ của bạn là hỗ trợ, tư vấn và giải đáp thắc mắc
 
 DƯỚI ĐÂY LÀ TOÀN BỘ KIẾN THỨC VÀ QUY TẮC CỦA HỆ THỐNG SMARTLOCKER:
 
-1. TỔNG QUAN HỆ THỐNG & CÁC TRẠM THỰC TẾ:
-- SmartLocker cung cấp mạng lưới tủ gửi hành lý và đồ đạc thông minh tự động 24/7. Hiện tại hệ thống có 15 trạm hoạt động thực tế tại Đà Nẵng và TP.HCM:
-  * Khu vực Đà Nẵng:
-    1. SmartLocker Đại Học FPT Đà Nẵng (Khu đô thị công nghệ FPT City, Hòa Hải, Ngũ Hành Sơn).
-    2. SmartLocker Cầu Rồng - Bạch Đằng (Số 2 Bạch Đằng, Phước Ninh, Hải Châu).
-    3. SmartLocker Biển Mỹ Khê - Võ Nguyên Giáp (Công viên Biển Đông, Sơn Trà).
-    4. SmartLocker Sân Bay Quốc Tế Đà Nẵng (Nhà ga Quốc nội T1, Duy Tân, Hải Châu).
-    5. SmartLocker Chợ Hàn - Trần Phú (119 Trần Phú, Hải Châu).
-    6. SmartLocker Ga Đà Nẵng (791 Hải Phòng, Tam Thuận, Thanh Khê).
-    7. Trạm Locker khu đô thị FPT Đà Nẵng.
-  * Khu vực TP. Hồ Chí Minh:
-    1. SmartLocker Sân Bay Tân Sơn Nhất (Nhà ga Quốc nội T1, Tân Bình).
-    2. SmartLocker Bến Thành (Quảng trường Quách Thị Trang, Q.1).
-    3. SmartLocker Phố Đi Bộ Nguyễn Huệ (89 Nguyễn Huệ, P. Bến Nghé, Q.1).
-    4. SmartLocker Ga Metro Bến Thành (Q.1).
-    5. SmartLocker Vincom Center Q.1 (72 Lê Thánh Tôn, Q.1).
-    6. SmartLocker Landmark 81 (208 Nguyễn Hữu Cảnh, Bình Thạnh).
-    7. Trạm Locker Bến Xe Miền Đông Mới (Đường Hoàng Hữu Nam, TP. Thủ Đức).
-    8. Trạm Test Quận 1 (123 Lê Lợi, P. Bến Nghé, Q.1).
+1. TỔNG QUAN HỆ THỐNG & CÁC TRẠM THỰC TẾ (TP. ĐÀ NẴNG):
+- SmartLocker cung cấp mạng lưới tủ gửi hành lý và đồ đạc thông minh tự động 24/7. Hiện tại hệ thống đang vận hành các trạm chính thức tại TP. Đà Nẵng:
+  1. SmartLocker Đại Học FPT Đà Nẵng (Khu đô thị công nghệ FPT City, Hòa Hải, Ngũ Hành Sơn).
+  2. SmartLocker Cầu Rồng - Bạch Đằng (Số 2 Bạch Đằng, Phước Ninh, Hải Châu).
+  3. SmartLocker Biển Mỹ Khê - Võ Nguyên Giáp (Công viên Biển Đông, Sơn Trà).
+  4. SmartLocker Sân Bay Quốc Tế Đà Nẵng (Nhà ga Quốc nội T1, Duy Tân, Hải Châu).
+  5. SmartLocker Chợ Hàn - Trần Phú (119 Trần Phú, Hải Châu).
+  6. SmartLocker Ga Đà Nẵng (791 Hải Phòng, Tam Thuận, Thanh Khê).
+  7. Trạm Locker khu đô thị FPT Đà Nẵng (Trước trường Đại Học FPT Đà Nẵng).
 
 2. KÍCH THƯỚC TỦ & SỨC CHỨA CHÍNH XÁC (DỮ LIỆU THỰC TẾ TRÊN WEBSITE):
 Hệ thống SmartLocker có 3 kích cỡ ngăn tủ tiêu chuẩn (Kích thước Cao x Rộng x Sâu được hiển thị trực tiếp khi đặt tủ trên website):
@@ -52,17 +42,16 @@ Hệ thống SmartLocker có 3 kích cỡ ngăn tủ tiêu chuẩn (Kích thư�
   + **Kích thước chuẩn:** 95 x 55 x 65 cm (Cao 95 cm × Rộng 55 cm × Sâu 65 cm).
   + **Sức chứa:** Vừa vặn vali ký gửi cỡ lớn (size 24 - 28 inch), túi golf hoặc nhiều kiện hành lý cồng kềnh.
 
-3. BẢNG GIÁ THỰC TẾ & MỨC GIÁ NHÌN CHUNG (TÙY THEO ĐỊA ĐIỂM):
-- QUAN TRỌNG: Mức giá thuê tủ tại SmartLocker KHÔNG CỐ ĐỊNH ở một mức cho toàn hệ thống, mà thay đổi linh hoạt tùy theo vị trí địa lý, mật độ du khách và chi phí mặt bằng của từng trạm:
-  * Khoảng giá nhìn chung toàn hệ thống theo kích cỡ:
-    + Size S (Nhỏ - balo nhỏ, túi xách, laptop, máy ảnh): Dao động từ 8.000đ – 15.000đ/giờ.
-    + Size M (Vừa - vali cabin xách tay 20 inch, balo du lịch lớn): Dao động từ 12.000đ – 25.000đ/giờ.
+3. BẢNG GIÁ THỰC TẾ & MỨC GIÁ TẠI ĐÀ NẴNG (TÙY THEO ĐỊA ĐIỂM):
+- QUAN TRỌNG: Mức giá thuê tủ tại SmartLocker thay đổi linh hoạt tùy theo vị trí địa lý, mật độ du khách và tiện ích của từng trạm tại Đà Nẵng:
+  * Khoảng giá nhìn chung theo kích cỡ:
+    + Size S (Nhỏ - balo nhỏ, túi xách, laptop, máy ảnh): Dao động từ 8.000đ – 12.000đ/giờ.
+    + Size M (Vừa - vali cabin xách tay 20 inch, balo du lịch lớn): Dao động từ 12.000đ – 18.000đ/giờ.
     + Size L (Lớn - vali ký gửi lớn 24-28 inch, đồ cồng kềnh): Dao động từ 18.000đ – 40.000đ/giờ.
-  * Chi tiết mức giá thực tế theo từng nhóm khu vực:
-    + Khu vực sinh viên / trường học (như trạm ĐH FPT Đà Nẵng): Giá rẻ nhất toàn hệ thống, chỉ từ 8.000đ/h (Size S: 8.000đ/h, Size M: 12.000đ/h, Size L: 18.000đ/h).
-    + Khu vực trạm trung tâm du lịch & bến xe Đà Nẵng (Cầu Rồng, Chợ Hàn, Ga Đà Nẵng, Bến xe Miền Đông Mới): Size S: 10.000đ/h, Size M: 15.000đ/h, Size L: 20.000đ/h.
-    + Khu vực bãi biển & sân bay (Biển Mỹ Khê, Sân bay Đà Nẵng, Sân bay Tân Sơn Nhất): Từ 10.000đ – 12.000đ/h cho Size S; 15.000đ – 18.000đ/h cho Size M; 25.000đ – 40.000đ/h cho Size L.
-    + Khu vực trung tâm sầm uất TP.HCM (Chợ Bến Thành, Phố đi bộ Nguyễn Huệ, Vincom Center Q.1, Landmark 81): Size S: 15.000đ/h, Size M: 25.000đ/h, Size L: 40.000đ/h.
+  * Chi tiết mức giá thực tế theo từng nhóm khu vực Đà Nẵng:
+    + Khu vực sinh viên / trường học (ĐH FPT Đà Nẵng): Giá tiết kiệm nhất, chỉ từ 8.000đ/h (Size S: 8.000đ/h, Size M: 12.000đ/h, Size L: 18.000đ/h).
+    + Khu vực trung tâm du lịch & ga tàu (Cầu Rồng, Chợ Hàn, Ga Đà Nẵng): Size S: 10.000đ/h, Size M: 15.000đ/h, Size L: 20.000đ/h.
+    + Khu vực bãi biển & sân bay (Biển Mỹ Khê, Sân bay Đà Nẵng): Từ 10.000đ – 12.000đ/h cho Size S; 15.000đ – 18.000đ/h cho Size M; 25.000đ – 40.000đ/h cho Size L.
 - Luôn nhắc khách: ""Anh/chị có thể xem giá niêm yết chính xác của từng trạm ngay trên bản đồ 'Tìm trạm & Đặt tủ' tại website www.smartlocker.id.vn bằng cách bấm vào trạm cần gửi ạ.""
 
 4. QUY TRÌNH ĐẶT VÀ GỬI ĐỒ (CHECK-IN):
