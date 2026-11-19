@@ -10,41 +10,45 @@ namespace Infrastructure.Mqtt;
 
 // Each door message uses a fresh DI scope for its scoped DbContext.
 public sealed class MqttSubscriberService(
-    IOptions<MqttOptions> options,
+    IOptionsMonitor<MqttOptions> options,
     ILogger<MqttSubscriberService> logger,
     IServiceScopeFactory scopeFactory,
     MqttConnectionStatus status) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var settings = options.Value;
-        if (!settings.Enabled)
-        {
-            status.MarkDisabled();
-            logger.LogInformation("MQTT is disabled. Set Mqtt:Enabled to true to enable it.");
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.Host) || settings.Port is < 1 or > 65535
-            || string.IsNullOrWhiteSpace(settings.ClientId) || string.IsNullOrWhiteSpace(settings.Topic)
-            || settings.ReconnectDelaySeconds < 1)
-        {
-            status.MarkInvalidConfiguration();
-            logger.LogError("Invalid MQTT configuration; subscriber was not started.");
-            return;
-        }
-
         var factory = new MqttFactory();
-        var clientOptions = settings.ApplyConnection(new MqttClientOptionsBuilder())
-            .WithClientId(settings.ClientId)
-            .WithCleanSession()
-            .WithTimeout(TimeSpan.FromSeconds(10))
-            .Build();
 
         try
         {
             while (!stoppingToken.IsCancellationRequested)
             {
+                var settings = options.CurrentValue;
+                if (!settings.Enabled)
+                {
+                    status.MarkDisabled();
+                    logger.LogInformation("MQTT is disabled. Set Mqtt:Enabled to true to enable it.");
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(settings.Host) || settings.Port is < 1 or > 65535
+                    || string.IsNullOrWhiteSpace(settings.ClientId) || string.IsNullOrWhiteSpace(settings.Topic)
+                    || settings.ReconnectDelaySeconds < 1)
+                {
+                    status.MarkInvalidConfiguration();
+                    logger.LogError("Invalid MQTT configuration; waiting before retry.");
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    continue;
+                }
+
+                var timeoutSeconds = settings.UseTls ? 15 : 10;
+                var clientOptions = settings.ApplyConnection(new MqttClientOptionsBuilder())
+                    .WithClientId(settings.ClientId)
+                    .WithCleanSession()
+                    .WithTimeout(TimeSpan.FromSeconds(timeoutSeconds))
+                    .Build();
+
                 using var client = factory.CreateMqttClient();
                 client.ApplicationMessageReceivedAsync += async args =>
                 {

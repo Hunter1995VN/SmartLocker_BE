@@ -10,21 +10,22 @@ using MQTTnet.Protocol;
 
 public class MqttPublishService : IMqttPublishService, IAsyncDisposable
 {
-    private readonly MqttOptions _options;
+    private readonly IOptionsMonitor<MqttOptions> _optionsMonitor;
     private readonly ILogger<MqttPublishService> _logger;
     private readonly MqttFactory _factory = new();
     private IMqttClient? _client;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
-    public MqttPublishService(IOptions<MqttOptions> options, ILogger<MqttPublishService> logger)
+    public MqttPublishService(IOptionsMonitor<MqttOptions> optionsMonitor, ILogger<MqttPublishService> logger)
     {
-        _options = options.Value;
+        _optionsMonitor = optionsMonitor;
         _logger = logger;
     }
 
     private async Task<IMqttClient?> GetConnectedClientAsync()
     {
-        if (!_options.Enabled)
+        var options = _optionsMonitor.CurrentValue;
+        if (!options.Enabled)
         {
             _logger.LogWarning("MqttPublishService: MQTT is disabled in config.");
             return null;
@@ -42,20 +43,21 @@ public class MqttPublishService : IMqttPublishService, IAsyncDisposable
             _client = _factory.CreateMqttClient();
 
             // TLS handshakes to a cloud broker need more than the 5 s that suffices on the LAN.
-            var builder = _options.ApplyConnection(new MqttClientOptionsBuilder())
+            var timeoutSeconds = options.UseTls ? 15 : 5;
+            var builder = options.ApplyConnection(new MqttClientOptionsBuilder())
                 .WithClientId($"smartlocker-publisher-{Guid.NewGuid():N}")
                 .WithCleanSession()
-                .WithTimeout(TimeSpan.FromSeconds(_options.UseTls ? 10 : 5));
+                .WithTimeout(TimeSpan.FromSeconds(timeoutSeconds));
 
             var clientOptions = builder.Build();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             await _client.ConnectAsync(clientOptions, cts.Token);
-            _logger.LogInformation("MqttPublishService connected to {Host}:{Port}", _options.Host, _options.Port);
+            _logger.LogInformation("MqttPublishService connected to {Host}:{Port}", options.Host, options.Port);
             return _client;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "MqttPublishService failed to connect to broker at {Host}:{Port}", _options.Host, _options.Port);
+            _logger.LogError(ex, "MqttPublishService failed to connect to broker at {Host}:{Port}", options.Host, options.Port);
             return null;
         }
         finally
