@@ -53,6 +53,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IAdminStationLockerService, AdminStationLockerService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IAdminBookingService, AdminBookingService>();
         services.AddScoped<IAdminIncidentService, AdminIncidentService>();
         services.AddScoped<IAdminAbandonedPropertyService, AdminAbandonedPropertyService>();
         services.AddScoped<IAdminReconciliationService, AdminReconciliationService>();
