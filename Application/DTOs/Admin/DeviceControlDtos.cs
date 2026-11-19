@@ -6,6 +6,7 @@ public class DeviceControlResultDto
     public string Command { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
+    public DiagnosticsResultDto? Diagnostics { get; set; }
 }
 
 public class DiagnosticsResultDto

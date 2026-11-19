@@ -89,6 +89,28 @@ public sealed class DiagnosticsEventHandler(
 
             if (stationId != Guid.Empty)
             {
+                if (doors.Count > 0)
+                {
+                    var stationLockers = await db.Lockers
+                        .Where(l => l.StationId == stationId)
+                        .ToListAsync(ct);
+
+                    foreach (var kvp in doors)
+                    {
+                        if (Enum.TryParse<Domain.Enums.LockerSize>(kvp.Key, true, out var size))
+                        {
+                            var locker = stationLockers.FirstOrDefault(l => l.Size == size);
+                            if (locker != null && locker.DoorState != kvp.Value)
+                            {
+                                locker.DoorState = kvp.Value;
+                                locker.UpdatedAt = DateTime.UtcNow;
+                                await notifications.NotifyDoorStatusChangedAsync(stationId, locker.Id, locker.LockerCode, kvp.Value, DateTimeOffset.UtcNow);
+                            }
+                        }
+                    }
+                    await db.SaveChangesAsync(ct);
+                }
+
                 await notifications.NotifySelfTestResultAsync(stationId, deviceCode, resultDto);
             }
         }
