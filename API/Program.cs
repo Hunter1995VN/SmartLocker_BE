@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using SmartInfrastructure;
@@ -39,11 +40,13 @@ else if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
 else throw new InvalidOperationException("Configure TicketProtection:CertificateThumbprint to encrypt the persisted ticket key ring.");
 builder.Services.AddSingleton<IAccessPinProtector, API.Services.AccessPinProtector>();
 
-// === Controllers + JSON enum serialization ===
+// === Controllers + JSON enum serialization & UTC ISO-8601 formatting ===
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeJsonConverter());
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
     });
 
@@ -197,3 +200,41 @@ app.MapGet("/api/health", (Infrastructure.Mqtt.MqttConnectionStatus mqtt,
 app.MapGet("/", () => Results.Redirect("/swagger/index.html"));
 
 app.Run();
+
+/// <summary>
+/// Đảm bảo mọi DateTime trả về từ API đều có hậu tố 'Z' chuẩn ISO-8601 UTC.
+/// Tránh lỗi lệch 7 tiếng múi giờ khi trình duyệt / thiết bị di động parse raw string.
+/// </summary>
+public class UtcDateTimeJsonConverter : JsonConverter<DateTime>
+{
+    public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Utc);
+    }
+
+    public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+    {
+        var utc = value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        writer.WriteStringValue(utc.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+    }
+}
+
+public class NullableUtcDateTimeJsonConverter : JsonConverter<DateTime?>
+{
+    public override DateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+        return DateTime.SpecifyKind(reader.GetDateTime(), DateTimeKind.Utc);
+    }
+
+    public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
+    {
+        if (!value.HasValue)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+        var utc = value.Value.Kind == DateTimeKind.Utc ? value.Value : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
+        writer.WriteStringValue(utc.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+    }
+}
